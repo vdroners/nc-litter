@@ -1,0 +1,51 @@
+{
+  "thresholds": [
+    {
+      "id": "stuck_rate_high",
+      "metric": "nStuck",
+      "per_hours_metric": "hr",
+      "ratio_gt": 2.0,
+      "severity": "warn",
+      "title": "Elevated stuck events",
+      "detail": "Stuck count is high relative to run hours.",
+      "action": "Clear clutter, check cliff sensors, inspect wheels."
+    },
+    {
+      "id": "scrub_rate_high",
+      "metric": "nScrubs",
+      "per_hours_metric": "hr",
+      "ratio_gt": 5.0,
+      "severity": "info",
+      "title": "Frequent scrubs",
+      "detail": "Robot is scrubbing often (debris / carpet edges).",
+      "action": "Vacuum edges manually; check extractors."
+    },
+    {
+      "id": "high_hours",
+      "metric": "hr",
+      "gte": 200,
+      "severity": "info",
+      "title": "High lifetime run hours",
+      "detail": "Alfred has substantial run time.",
+      "action": "Inspect brushes, casters, and filter; replace wear parts as needed."
+    },
+    {
+      "id": "bin_full_hint",
+      "metric_state": "bin",
+      "equals": "full",
+      "severity": "warn",
+      "title": "Bin full",
+      "detail": "Dust bin reports full.",
+      "action": "Empty the bin before the next mission."
+    },
+    {
+      "id": "low_battery_hint",
+      "metric_state": "battery_pct",
+      "lte": 15,
+      "severity": "warn",
+      "title": "Low battery",
+      "detail": "Battery below 15%.",
+      "action": "Dock Alfred to charge."
+    }
+  ]
+}

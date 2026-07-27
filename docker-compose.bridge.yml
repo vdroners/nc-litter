@@ -1,0 +1,35 @@
+services:
+  nc_litter_bridge:
+    build: ./bridge
+    container_name: nc_litter_bridge
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      LITTER_MOCK: "${LITTER_MOCK:-1}"
+      BLID: "${BLID:-}"
+      PASSWORD: "${PASSWORD:-}"
+      ROBOT_IP: "${ROBOT_IP:-}"
+      FIRMWARE_VERSION: "${FIRMWARE_VERSION:-2}"
+      # Comma-separated /24 bases (or CIDR) to TCP-scan for :8883 when UDP misses.
+      LITTER_DISCOVER_SUBNETS: "${LITTER_DISCOVER_SUBNETS:-10.0.0.0/24}"
+      # Host Soft-AP helper (systemd nc-litter-wifi-helper on :8091).
+      LITTER_WIFI_HELPER_URL: "${LITTER_WIFI_HELPER_URL:-http://host.docker.internal:8091}"
+      LITTER_WIFI_HELPER_TOKEN: "${LITTER_WIFI_HELPER_TOKEN:-}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Host loopback only for gates/debug — not LAN-public.
+    ports:
+      - "127.0.0.1:18791:8080"
+    networks:
+      nc-litter-net:
+        # Both spellings resolve so any saved bridge_url keeps working.
+        aliases:
+          - nc_litter_bridge
+          - nc-litter-bridge
+
+networks:
+  nc-litter-net:
+    name: nc-litter-net

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="NC Roomba">
+  <!-- Charcoal disc (robot body) -->
+  <circle cx="50" cy="50" r="44" fill="#1a1a1c"/>
+  <!-- Brass HOME ring -->
+  <circle cx="50" cy="50" r="38" fill="none" stroke="#C4A574" stroke-width="3.5"/>
+  <circle cx="50" cy="50" r="30" fill="none" stroke="#C4A574" stroke-width="1.25" stroke-opacity="0.55"/>
+  <!-- Soft cream face plate -->
+  <circle cx="50" cy="50" r="22" fill="#F2E8D5"/>
+  <!-- HOME button (house) -->
+  <path fill="#1a1a1c" d="M50 36 L62 46 V60 H54 V52 H46 V60 H38 V46 Z"/>
+  <!-- Subtle bumper highlight -->
+  <path d="M28 62 Q50 72 72 62" fill="none" stroke="#C4A574" stroke-width="2" stroke-linecap="round" stroke-opacity="0.7"/>
+</svg>

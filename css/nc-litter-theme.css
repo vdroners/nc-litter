@@ -1,0 +1,292 @@
+/*
+ * NC-GCS Shared Theme Tokens (Phase 1 of nc-ecosystem-rename-and-theme).
+ *
+ * This file is the single source of truth for ALL nc_gcs* sibling apps'
+ * visual identity (brand colors, neutral scale, status colors, spacing,
+ * radius, shadows, typography). It is loaded into every sibling's page
+ * head by `OCA\NcGcs\Util\ThemeAssetLoader::register($appId)` so that
+ * siblings can render `<NcGcsAppShell>` (or any element using these vars)
+ * with NC-GCS look without copying tokens.
+ *
+ * Each sibling MAY override `--nc-app-accent` in its own per-app stylesheet
+ * to tint accent surfaces (e.g. NC_ADSB uses cyan, NC_Sim uses green).
+ *
+ * IMPORTANT: this file MUST stay token-only. No component classes here —
+ * those still live in `apps/nc_gcs/src/assets/theme.css` (parent-only) and
+ * each sibling's per-panel SCSS. Adding component selectors here would
+ * leak parent-only styles into sibling navigation/header chrome.
+ */
+
+:root {
+	/* ─── Brand ──────────────────────────────────────────────────────── */
+	--nc-gcs-primary: #2196f3;
+	--nc-gcs-primary-hover: #42a5f5;
+	--nc-gcs-primary-strong: #1565c0;
+	--nc-gcs-primary-dim: rgba(33, 150, 243, 0.15);
+	--nc-gcs-accent: #64e9ff;
+	--nc-gcs-accent-rgb: 100, 233, 255;
+
+	/* Per-app accent (siblings override; defaults to brand primary).
+	 * NC_ADSB → cyan, NC_Sim → green, NC_BaseStation → teal, etc. */
+	--nc-app-accent: var(--nc-gcs-primary);
+	--nc-app-accent-soft: var(--nc-gcs-primary-dim);
+
+	/* ─── Status / semantic ──────────────────────────────────────────── */
+	--nc-gcs-success: #4caf50;
+	--nc-gcs-success-soft: #22c55e;
+	--nc-gcs-success-pastel: #86efac;
+	--nc-gcs-success-tint: rgba(76, 175, 80, 0.15);
+
+	--nc-gcs-warning: #ff9800;
+	--nc-gcs-warning-soft: #f59e0b;
+	--nc-gcs-warning-pastel: #fde047;
+	--nc-gcs-warning-tint: rgba(255, 152, 0, 0.15);
+
+	--nc-gcs-danger: #f44336;
+	--nc-gcs-danger-soft: #ef4444;
+	--nc-gcs-danger-pastel: #fca5a5;
+	--nc-gcs-danger-tint: rgba(244, 67, 54, 0.15);
+
+	--nc-gcs-info: #00bcd4;
+	--nc-gcs-info-soft: #22d3ee;
+
+	/* ─── Surfaces (dark first; light overrides below) ─────────────── */
+	--nc-gcs-bg-app: #0d1117;
+	--nc-gcs-bg-surface: #161b22;
+	--nc-gcs-bg-surface-hover: #1c2333;
+	--nc-gcs-bg-elevated: #21262d;
+	--nc-gcs-bg-card: rgba(22, 27, 34, 0.95);
+	--nc-gcs-bg-overlay: rgba(0, 0, 0, 0.6);
+
+	/* ─── Text ───────────────────────────────────────────────────────── */
+	--nc-gcs-text-primary: #e6edf3;
+	--nc-gcs-text-secondary: #8b949e;
+	--nc-gcs-text-muted: #8b949e;
+	--nc-gcs-text-on-accent: #ffffff;
+
+	/* ─── Borders ────────────────────────────────────────────────────── */
+	--nc-gcs-border: rgba(240, 246, 252, 0.1);
+	--nc-gcs-border-strong: rgba(240, 246, 252, 0.25);
+	--nc-gcs-border-soft: rgba(240, 246, 252, 0.08);
+	--nc-gcs-border-active: rgba(33, 150, 243, 0.4);
+
+	/* Legacy aliases used by ortho/triage/crew sibling SCSS */
+	--nc-gcs-bg-panel: var(--nc-gcs-bg-surface);
+	--nc-gcs-border-subtle: var(--nc-gcs-border-soft);
+
+	/* ─── Effects ────────────────────────────────────────────────────── */
+	--nc-gcs-blur: blur(12px);
+	--nc-gcs-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	--nc-gcs-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+	/* ─── Geometry ───────────────────────────────────────────────────── */
+	--nc-gcs-radius-sm: 6px;
+	--nc-gcs-radius: 8px;
+	--nc-gcs-radius-lg: 12px;
+
+	--nc-gcs-space-xs: 4px;
+	--nc-gcs-space-sm: 8px;
+	--nc-gcs-space-md: 12px;
+	--nc-gcs-space-lg: 16px;
+	--nc-gcs-space-xl: 24px;
+	--nc-gcs-space-2xl: 32px;
+
+	/* ─── Typography ─────────────────────────────────────────────────── */
+	--nc-gcs-text-xs: 10px;
+	--nc-gcs-text-sm: 12px;
+	--nc-gcs-text-base: 14px;
+	--nc-gcs-text-lg: 16px;
+	--nc-gcs-text-xl: 20px;
+	--nc-gcs-text-2xl: 24px;
+
+	--nc-gcs-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+	/* ─── Layout ─────────────────────────────────────────────────────── */
+	--nc-gcs-header-height: 50px;
+	--nc-gcs-app-shell-banner-height: 56px;
+
+	/* ─── Z-index scale ──────────────────────────────────────────────── */
+	--nc-gcs-z-popover: 100;
+	--nc-gcs-z-floating: 1100;
+	--nc-gcs-z-nav: 2000;
+	--nc-gcs-z-modal: 2200;
+	--nc-gcs-z-toast: 3000;
+}
+
+/* ─── Light theme overrides ──────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+	:root:not([data-nc-gcs-theme="dark"]) {
+		--nc-gcs-bg-app: #ffffff;
+		--nc-gcs-bg-surface: #f5f5f5;
+		--nc-gcs-bg-surface-hover: #ebebeb;
+		--nc-gcs-bg-elevated: #fafafa;
+		--nc-gcs-bg-card: rgba(255, 255, 255, 0.97);
+		--nc-gcs-bg-overlay: rgba(0, 0, 0, 0.35);
+
+		--nc-gcs-text-primary: #1a1a2e;
+		--nc-gcs-text-secondary: #333344;
+		--nc-gcs-text-muted: #666680;
+
+		--nc-gcs-border: #d0d0d8;
+		--nc-gcs-border-strong: #b0b0bc;
+		--nc-gcs-border-soft: #e0e0e8;
+
+		--nc-gcs-primary: #1976d2;
+		--nc-gcs-primary-hover: #1565c0;
+		--nc-gcs-primary-dim: rgba(25, 118, 210, 0.12);
+
+		--nc-gcs-success: #2e7d32;
+		--nc-gcs-warning: #e65100;
+		--nc-gcs-danger: #c62828;
+		--nc-gcs-info: #00838f;
+
+		--nc-gcs-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+		--nc-gcs-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+	}
+}
+
+/* Explicit opt-in light-mode (used by Nextcloud's "light" body class). */
+.theme--light :root,
+body.theme--light {
+	--nc-gcs-bg-app: #ffffff;
+	--nc-gcs-bg-surface: #f5f5f5;
+	--nc-gcs-bg-surface-hover: #ebebeb;
+	--nc-gcs-bg-elevated: #fafafa;
+	--nc-gcs-bg-card: rgba(255, 255, 255, 0.97);
+	--nc-gcs-bg-overlay: rgba(0, 0, 0, 0.35);
+	--nc-gcs-text-primary: #1a1a2e;
+	--nc-gcs-text-secondary: #333344;
+	--nc-gcs-text-muted: #666680;
+	--nc-gcs-border: #d0d0d8;
+	--nc-gcs-border-strong: #b0b0bc;
+	--nc-gcs-border-soft: #e0e0e8;
+	--nc-gcs-primary: #1976d2;
+	--nc-gcs-primary-hover: #1565c0;
+	--nc-gcs-primary-dim: rgba(25, 118, 210, 0.12);
+	--nc-gcs-success: #2e7d32;
+	--nc-gcs-warning: #e65100;
+	--nc-gcs-danger: #c62828;
+	--nc-gcs-info: #00838f;
+	--nc-gcs-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+	--nc-gcs-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* Explicit dark opt-in when Nextcloud body is in dark mode */
+.theme--dark .nc-gcs-app-shell,
+body.theme--dark .nc-gcs-app-shell,
+[data-nc-gcs-theme="dark"] {
+	--nc-gcs-bg-app: #0d1117;
+	--nc-gcs-bg-surface: #161b22;
+	--nc-gcs-text-primary: #e6edf3;
+	--nc-gcs-text-secondary: #8b949e;
+	--nc-gcs-text-muted: #8b949e;
+	--nc-gcs-border: rgba(240, 246, 252, 0.1);
+	--nc-gcs-border-soft: rgba(240, 246, 252, 0.08);
+}
+
+/* ─── App-shell defaults ─────────────────────────────────────────────── */
+/* Applied by NcGcsAppShell.vue's root <div class="nc-gcs-app-shell ..."> so
+ * any sibling that uses the shell inherits a consistent dark-first surface,
+ * Inter font, and accent-colored focus ring.
+ *
+ * Phase C (sibling-bridge fix, May 2026): MUST be a constrained flex
+ * column so the body becomes the scroll container -- otherwise tall
+ * panels (SimDashboard, BaseStationPanel, ADSB receiver editor) extend
+ * past the viewport and the operator can't scroll past the banner to
+ * reach controls below the fold. The previous `min-height: 100%` only
+ * said "be at least as tall as your parent"; nothing capped the
+ * height, so `.nc-gcs-app-shell__body { min-height: 0 }` never
+ * triggered and overflow was never honoured. */
+.nc-gcs-app-shell {
+	background: var(--nc-gcs-bg-app);
+	color: var(--nc-gcs-text-primary);
+	font-family: var(--nc-gcs-font-sans);
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+.nc-gcs-app-shell :focus-visible {
+	outline: 2px solid var(--nc-app-accent);
+	outline-offset: 2px;
+}
+
+/* Banner header used by the shell's <header> slot. Tinted with the
+ * per-sibling accent so users can tell at a glance which app they're in. */
+.nc-gcs-app-shell__banner {
+	display: flex;
+	align-items: center;
+	gap: var(--nc-gcs-space-md);
+	padding: var(--nc-gcs-space-md) var(--nc-gcs-space-lg);
+	min-height: var(--nc-gcs-app-shell-banner-height);
+	background: linear-gradient(
+		90deg,
+		color-mix(in srgb, var(--nc-app-accent) 22%, var(--nc-gcs-bg-surface)) 0%,
+		var(--nc-gcs-bg-surface) 100%
+	);
+	border-bottom: 1px solid var(--nc-gcs-border);
+	color: var(--nc-gcs-text-primary);
+}
+
+.nc-gcs-app-shell__banner-icon {
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	border-radius: var(--nc-gcs-radius-sm);
+	background: color-mix(in srgb, var(--nc-app-accent) 22%, transparent);
+	border: 1px solid color-mix(in srgb, var(--nc-app-accent) 55%, transparent);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--nc-app-accent, var(--nc-gcs-text-on-accent));
+	font-weight: 700;
+}
+
+.nc-gcs-app-shell__banner-icon-svg {
+	width: 22px;
+	height: 22px;
+	display: block;
+}
+
+.nc-gcs-app-shell__banner-title {
+	font-size: var(--nc-gcs-text-lg);
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	margin: 0;
+}
+
+.nc-gcs-app-shell__banner-subtitle {
+	font-size: var(--nc-gcs-text-sm);
+	color: var(--nc-gcs-text-muted);
+	margin-left: auto;
+}
+
+.nc-gcs-app-shell__body {
+	padding: var(--nc-gcs-space-lg);
+	display: flex;
+	flex-direction: column;
+	gap: var(--nc-gcs-space-md);
+	min-height: 0;
+	/* Phase C: claim the leftover vertical space inside the shell and
+	 * own the y-scroll so the banner stays pinned at the top while the
+	 * panel content (SimDashboard, BaseStationPanel, ...) scrolls. */
+	flex: 1;
+	overflow: auto;
+}
+
+.nc-gcs-app-shell__footer {
+	padding: var(--nc-gcs-space-sm) var(--nc-gcs-space-lg);
+	font-size: var(--nc-gcs-text-xs);
+	color: var(--nc-gcs-text-muted);
+	border-top: 1px solid var(--nc-gcs-border-soft);
+	display: flex;
+	gap: var(--nc-gcs-space-md);
+	align-items: center;
+}
+
+/*
+ * NC Litter owns a brass accent (defined in style.scss, which loads after this
+ * file). The teal accent that used to be pinned here was dead weight — it was
+ * always overridden — so it has been removed to avoid confusion.
+ */

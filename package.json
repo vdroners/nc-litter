@@ -1,0 +1,48 @@
+{
+  "name": "nc_litter",
+  "version": "0.9.1",
+  "private": true,
+  "description": "NC Litter — Nextcloud control for Litter-Robot over local MQTT",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "sass css/style.scss css/style.css --no-source-map && webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nextcloud/auth": "^2.4.0",
+    "@nextcloud/axios": "^2.5.0",
+    "@nextcloud/dialogs": "^7.3.0",
+    "@nextcloud/router": "^3.0.1",
+    "@nextcloud/vue": "^8.0.0",
+    "pinia": "^2.1.7",
+    "vue": "^2.7.16",
+    "vue-router": "^3.6.5"
+  },
+  "devDependencies": {
+    "@nextcloud/babel-config": "^1.2.0",
+    "@nextcloud/browserslist-config": "^3.0.1",
+    "@nextcloud/webpack-vue-config": "^7.0.2",
+    "babel-loader": "^10.0.0",
+    "css-loader": "^7.1.1",
+    "happy-dom": "^17.6.3",
+    "sass": "^1.64.2",
+    "sass-loader": "^16.0.2",
+    "style-loader": "^4.0.0",
+    "terser-webpack-plugin": "^5.6.1",
+    "vitest": "^3.0.0",
+    "vue-loader": "^15.11.1",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^6.0.1",
+    "webpack-merge": "^6.0.1"
+  },
+  "browserslist": [
+    "extends @nextcloud/browserslist-config"
+  ],
+  "allowScripts": {
+    "vue-demi@0.14.10": true,
+    "esbuild@0.28.1": true,
+    "@parcel/watcher@2.6.0": true,
+    "core-js@3.49.0": true
+  }
+}

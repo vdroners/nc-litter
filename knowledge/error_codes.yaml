@@ -1,0 +1,142 @@
+errors:
+  "0":
+    title: "No error"
+    detail: "Robot reports no active error."
+    action: ""
+  "1":
+    title: "Left wheel dropped"
+    detail: "Left wheel is not contacting the floor."
+    action: "Place Alfred on a hard floor and clear debris under the wheel."
+  "2":
+    title: "Right wheel dropped"
+    detail: "Right wheel is not contacting the floor."
+    action: "Place Alfred on a hard floor and clear debris under the wheel."
+  "5":
+    title: "Left wheel jammed"
+    detail: "Left wheel cannot turn freely."
+    action: "Remove hair/debris from the left wheel well."
+  "6":
+    title: "Right wheel jammed"
+    detail: "Right wheel cannot turn freely."
+    action: "Remove hair/debris from the right wheel well."
+  "7":
+    title: "Left brush jammed"
+    detail: "Side brush is stuck."
+    action: "Clear the side brush and housing."
+  "8":
+    title: "Right brush / main brush jammed"
+    detail: "Main brush cannot spin."
+    action: "Remove and clean the extractors / main brush."
+  "9":
+    title: "Dust bin missing"
+    detail: "Bin is not seated."
+    action: "Re-seat the dust bin until it clicks."
+  "10":
+    title: "Bumper stuck"
+    detail: "Front bumper is pressed or jammed."
+    action: "Tap the bumper free and check for obstacles."
+  "11":
+    title: "Left cliff sensor dirty"
+    detail: "Cliff sensor reading is invalid."
+    action: "Wipe cliff sensors with a dry cloth."
+  "12":
+    title: "Right cliff sensor dirty"
+    detail: "Cliff sensor reading is invalid."
+    action: "Wipe cliff sensors with a dry cloth."
+  "13":
+    title: "Both cliff sensors dirty"
+    detail: "Cliff sensors need cleaning."
+    action: "Wipe all cliff sensors."
+  "14":
+    title: "Wheel dropped / navigation failed"
+    detail: "Navigation cannot proceed."
+    action: "Move Alfred to open floor space and restart clean."
+  "15":
+    title: "Navigation problem"
+    detail: "Alfred cannot build or follow a path."
+    action: "Clear clutter; ensure good lighting; retry."
+  "16":
+    title: "Battery issue"
+    detail: "Battery communication or charge fault."
+    action: "Reseat on Home Base; check contacts."
+  "17":
+    title: "Cliff sensors failed"
+    detail: "Safety cliff detection unavailable."
+    action: "Clean sensors; if persistent, service unit."
+  "18":
+    title: "Bin full"
+    detail: "Dust bin needs emptying."
+    action: "Empty the bin and re-seat it."
+  "21":
+    title: "Docking problem"
+    detail: "Could not dock on Home Base."
+    action: "Clear path to Home Base; wipe charging contacts."
+  "22":
+    title: "Software update required"
+    detail: "Robot firmware needs attention."
+    action: "Complete any pending local update via app once, then return to LAN MQTT."
+  "24":
+    title: "Localization failed"
+    detail: "Lost track of position."
+    action: "Carry Alfred to Home Base and start a new mission."
+  "25":
+    title: "Vacuum stalled"
+    detail: "Suction path blocked."
+    action: "Clear bin, filter, and vacuum path."
+  "26":
+    title: "Battery overheating"
+    detail: "Battery temperature too high."
+    action: "Let Alfred cool on a hard floor; do not charge until cool."
+not_ready:
+  "0":
+    title: "Ready"
+    detail: "Robot is ready for commands."
+    action: ""
+  "1":
+    title: "Near full / near empty battery"
+    detail: "Battery state prevents starting."
+    action: "Charge Alfred before starting a clean."
+  "2":
+    title: "Bin full"
+    detail: "Cannot start while bin is full."
+    action: "Empty the dust bin."
+  "3":
+    title: "Path blocked"
+    detail: "Start location is obstructed."
+    action: "Clear the area around Alfred."
+  "4":
+    title: "Not on flat surface"
+    detail: "Robot is tilted or lifted."
+    action: "Place on flat floor."
+  "5":
+    title: "Busy"
+    detail: "Already running a mission or docking."
+    action: "Wait or pause/stop the current cycle."
+  "6":
+    title: "Handle lifted / carrying"
+    detail: "Detected as being carried."
+    action: "Set down gently and wait a few seconds."
+  "7":
+    title: "Charging / docked constraint"
+    detail: "Current dock/charge state blocks this command."
+    action: "Undock with Clean or wait until charged."
+  "8":
+    title: "Software updating"
+    detail: "Firmware update in progress."
+    action: "Wait for update to finish."
+  "9":
+    title: "Pad / accessory issue"
+    detail: "Accessory not ready (if equipped)."
+    action: "Check accessories; N/A for bare 960."
+  "15":
+    title: "Charging — settling on the dock"
+    detail: "Seen briefly right after Alfred docks: it is charging and not yet ready to accept a new command. It clears on its own within a few seconds."
+    action: "No action needed — wait a moment and retry."
+  "16":
+    title: "Just docked / busy"
+    detail: "Robot is on the dock and finishing up; not ready for a new command yet."
+    action: "Give it a few seconds, then retry."
+  "31":
+    title: "Docked and charging"
+    detail: "Command not available while charging on the dock."
+    action: "Start a clean to undock, or wait until charged."
