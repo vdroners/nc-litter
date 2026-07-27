@@ -8,8 +8,8 @@ use JsonSerializable;
 use OCP\AppFramework\Db\Entity;
 
 /**
- * @method int getRobotId()
- * @method void setRobotId(int $robotId)
+ * @method int getDeviceId()
+ * @method void setDeviceId(int $deviceId)
  * @method string getUid()
  * @method void setUid(string $uid)
  * @method string getAction()
@@ -23,7 +23,7 @@ use OCP\AppFramework\Db\Entity;
  */
 class CommandAudit extends Entity implements JsonSerializable
 {
-	protected $robotId;
+	protected $deviceId;
 	protected $uid;
 	protected $action;
 	protected $ts;
@@ -32,7 +32,7 @@ class CommandAudit extends Entity implements JsonSerializable
 
 	public function __construct()
 	{
-		$this->addType('robotId', 'integer');
+		$this->addType('deviceId', 'integer');
 		$this->addType('ts', 'integer');
 	}
 
@@ -45,7 +45,7 @@ class CommandAudit extends Entity implements JsonSerializable
 		}
 		return [
 			'id' => (int) $this->id,
-			'robot_id' => (int) $this->robotId,
+			'device_id' => (int) $this->deviceId,
 			'uid' => (string) $this->uid,
 			'action' => (string) $this->action,
 			'ts' => (int) $this->ts,

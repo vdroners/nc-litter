@@ -3,7 +3,6 @@
 		:state="store.state"
 		:age-s="store.lastSeenAgeS"
 		:connected="store.connected"
-		:conflict="store.conflict"
 		:stale="store.stale"
 		:drawer-open="store.drawerOpen"
 		:transport="store.transport"
@@ -15,12 +14,11 @@
 		@close-drawer="store.closeDrawer()"
 		@retry-connect="store.connectTest()">
 		<NcNoteCard v-if="!store.canOperate" type="warning" heading="Read-only access">
-			Controlling the robot needs the <code>litter-operators</code> group (or an
-			administrator account). Status, history and schedule stay visible.
+			Commanding the unit needs the <code>litter-operators</code> group (or an
+			administrator account). Status, history and settings stay visible.
 		</NcNoteCard>
 
 		<DashboardView v-if="tab === 'dashboard'" @open-drawer="store.openDrawer()" />
-		<LocationView v-else-if="tab === 'location'" />
 		<HistoryView v-else-if="tab === 'history'" />
 		<SettingsView v-else-if="tab === 'settings'" />
 	</AppShell>
@@ -30,16 +28,15 @@
 import { NcNoteCard } from '@nextcloud/vue'
 
 import AppShell from './components/AppShell.vue'
-import { useRobotStore } from './store/robot.js'
+import { useDeviceStore } from './store/device.js'
 import DashboardView from './views/DashboardView.vue'
 import HistoryView from './views/HistoryView.vue'
-import LocationView from './views/LocationView.vue'
 import SettingsView from './views/SettingsView.vue'
 
-const TAB_IDS = ['dashboard', 'location', 'history', 'settings']
+const TAB_IDS = ['dashboard', 'history', 'settings']
 
 /**
- * Section switching uses the URL hash rather than vue-router: four flat views
+ * Section switching uses the URL hash rather than vue-router: three flat views
  * with no nested routes do not need a router, and the hash keeps deep links
  * (and browser back) working inside the Nextcloud page.
  *
@@ -53,7 +50,7 @@ function tabFromHash() {
 export default {
 	name: 'App',
 
-	components: { AppShell, DashboardView, HistoryView, LocationView, NcNoteCard, SettingsView },
+	components: { AppShell, DashboardView, HistoryView, NcNoteCard, SettingsView },
 
 	props: {
 		bootstrap: {
@@ -68,7 +65,7 @@ export default {
 
 	computed: {
 		store() {
-			return useRobotStore()
+			return useDeviceStore()
 		},
 	},
 

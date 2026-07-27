@@ -4,21 +4,21 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\BackgroundJob;
 
-use OCA\NcLitter\Service\MissionService;
-use OCA\NcLitter\Service\RobotService;
+use OCA\NcLitter\Service\CycleService;
+use OCA\NcLitter\Service\DeviceService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 use Psr\Log\LoggerInterface;
 
 /**
- * Daily prune of missions / telemetry / audit by retention_days.
+ * Daily prune of cycles / telemetry / audit by retention_days.
  */
 class RetentionPruneJob extends TimedJob
 {
 	public function __construct(
 		ITimeFactory $time,
-		private RobotService $robots,
-		private MissionService $missions,
+		private DeviceService $devices,
+		private CycleService $cycles,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($time);
@@ -28,10 +28,10 @@ class RetentionPruneJob extends TimedJob
 	protected function run($argument): void
 	{
 		try {
-			$days = $this->robots->getRetentionDays();
-			$result = $this->missions->retentionApply($days);
-			$this->logger->info('RetentionPruneJob removed missions={m} telemetry={t} audit={a}', [
-				'm' => $result['missions'],
+			$days = $this->devices->getRetentionDays();
+			$result = $this->cycles->retentionApply($days);
+			$this->logger->info('RetentionPruneJob removed cycles={c} telemetry={t} audit={a}', [
+				'c' => $result['cycles'],
 				't' => $result['telemetry'],
 				'a' => $result['audit'],
 			]);

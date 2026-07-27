@@ -17,33 +17,50 @@ class MaintenanceHintServiceTest extends TestCase
 		$this->svc = new MaintenanceHintService($path);
 	}
 
-	public function testStuckRateHint(): void
+	public function testDrawerWarnAndDangerEscalate(): void
 	{
-		$hints = $this->svc->hintsFor(['nStuck' => 10, 'hr' => 2.0], []);
-		$ids = array_column($hints, 'id');
-		$this->assertContains('stuck_rate_high', $ids);
+		$warn = array_column($this->svc->hintsFor(['drawer_level_pct' => 92]), 'id');
+		$this->assertContains('drawer_level_warn', $warn);
+		$this->assertNotContains('drawer_level_danger', $warn);
+
+		$danger = array_column($this->svc->hintsFor(['drawer_level_pct' => 99]), 'id');
+		$this->assertContains('drawer_level_warn', $danger);
+		$this->assertContains('drawer_level_danger', $danger);
 	}
 
-	public function testBinFullStateHint(): void
+	public function testLitterLowUsesLteComparator(): void
 	{
-		$hints = $this->svc->hintsFor([], ['bin' => 'full']);
-		$ids = array_column($hints, 'id');
-		$this->assertContains('bin_full_hint', $ids);
+		$ids = array_column($this->svc->hintsFor(['litter_level_pct' => 15]), 'id');
+		$this->assertContains('litter_level_warn', $ids);
+		$this->assertNotContains('litter_level_danger', $ids);
+
+		$ids = array_column($this->svc->hintsFor(['litter_level_pct' => 4]), 'id');
+		$this->assertContains('litter_level_danger', $ids);
 	}
 
-	public function testLowBatteryHint(): void
+	public function testCyclesSinceEmptyHint(): void
 	{
-		$hints = $this->svc->hintsFor([], ['battery_pct' => 10]);
-		$ids = array_column($hints, 'id');
-		$this->assertContains('low_battery_hint', $ids);
+		$ids = array_column($this->svc->hintsFor(['cycles_since_empty' => 55]), 'id');
+		$this->assertContains('cycles_since_empty_info', $ids);
 	}
 
-	public function testQuietWhenClean(): void
+	public function testQuietWhenHealthy(): void
 	{
-		$hints = $this->svc->hintsFor(['nStuck' => 0, 'hr' => 10, 'nScrubs' => 0], [
-			'bin' => 'ok',
-			'battery_pct' => 80,
+		$hints = $this->svc->hintsFor([
+			'drawer_level_pct' => 20,
+			'litter_level_pct' => 80,
+			'cycles_since_empty' => 6,
 		]);
 		$this->assertSame([], $hints);
+	}
+
+	public function testMissingOrNullMetricStaysSilent(): void
+	{
+		$this->assertSame([], $this->svc->hintsFor([]));
+		$this->assertSame([], $this->svc->hintsFor([
+			'drawer_level_pct' => null,
+			'litter_level_pct' => null,
+			'cycles_since_empty' => null,
+		]));
 	}
 }

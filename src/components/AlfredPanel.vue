@@ -8,7 +8,7 @@
 		</div>
 
 		<p class="nc-litter-muted">
-			Alfred (your OpenClaw assistant) can drive {{ robotName }} from Talk. Try:
+			Alfred (your OpenClaw assistant) can drive {{ deviceName }} from Talk. Try:
 		</p>
 		<ul class="nc-litter-alfred__cmds">
 			<li v-for="c in commands" :key="c"><code>{{ c }}</code></li>
@@ -30,6 +30,14 @@
 import { getAlfredAlerts } from '../services/api.js'
 import { timeLabel } from '../utils/format.js'
 
+/** The commands the litter OpenClaw skill answers to. */
+const COMMANDS = [
+	'@alfred litter status',
+	'@alfred litter clean',
+	'@alfred litter empty',
+	'@alfred litter sleep',
+]
+
 /**
  * Optional Dashboard surface for the OpenClaw "Alfred" integration. Only
  * rendered when the feature is enabled in admin. Links to the Talk room, shows
@@ -44,14 +52,14 @@ export default {
 			type: Object,
 			default: () => ({}),
 		},
-		robotName: {
+		deviceName: {
 			type: String,
-			default: 'the robot',
+			default: 'the unit',
 		},
 	},
 
 	data() {
-		return { alerts: [], timer: null }
+		return { alerts: [], timer: null, commands: COMMANDS }
 	},
 
 	computed: {
@@ -62,13 +70,6 @@ export default {
 			}
 			// Nextcloud Talk deep link (relative to the NC origin).
 			return `${window.location.origin}/index.php/call/${token}`
-		},
-		commands() {
-			return [
-				'@alfred litter status',
-				'@alfred litter clean',
-				'@alfred litter dock',
-			]
 		},
 	},
 

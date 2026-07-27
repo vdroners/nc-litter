@@ -25,7 +25,7 @@ if (!is_file($info)) {
 	failg('G08', 'info.xml missing in container');
 } else {
 	$xml = file_get_contents($info) ?: '';
-	if (!str_contains($xml, '<version>0.1.0</version>') && !preg_match('/<version>\d+\.\d+\.\d+<\/version>/', $xml)) {
+	if (!preg_match('/<version>\d+\.\d+\.\d+<\/version>/', $xml)) {
 		failg('G08', 'version missing');
 	} else {
 		pass('G08', 'deploy present');
@@ -37,12 +37,25 @@ if (!is_file($routes)) {
 	failg('G10', 'routes.php missing');
 } else {
 	$r = file_get_contents($routes) ?: '';
-	foreach (['robot#state', 'robot#action', 'settings#setSchedule', 'mission#list', 'settings#adminSave'] as $need) {
+	$missing = [];
+	foreach ([
+		'device#state',
+		'device#action',
+		'device#stream',
+		'cycle#list',
+		'settings#getSettings',
+		'settings#setSettings',
+		'settings#adminSave',
+		'settings#onboardLogin',
+		'settings#onboardSelect',
+	] as $need) {
 		if (!str_contains($r, $need)) {
-			failg('G10', "missing route $need");
+			$missing[] = $need;
 		}
 	}
-	if ($fail === 0) {
+	if ($missing !== []) {
+		failg('G10', 'missing routes: ' . implode(', ', $missing));
+	} else {
 		pass('G10', 'routes declared');
 	}
 }
@@ -54,11 +67,34 @@ if (!is_file($crypto) || !str_contains((string)file_get_contents($crypto), 'enc:
 	pass('G13', 'secret crypto present');
 }
 
-$perm = $remote . '/lib/Util/Litter-RobotGroupAccess.php';
+$perm = $remote . '/lib/Util/LitterGroupAccess.php';
 if (!is_file($perm) || !str_contains((string)file_get_contents($perm), 'litter-operators')) {
 	failg('G11', 'group access missing');
 } else {
 	pass('G11', 'group ACL helper present');
+}
+
+// The PHP layer must offer exactly the bridge's LR4 action set.
+$deviceService = $remote . '/lib/Service/DeviceService.php';
+if (!is_file($deviceService)) {
+	failg('G12', 'DeviceService missing');
+} else {
+	$src = (string)file_get_contents($deviceService);
+	$missing = [];
+	foreach ([
+		'clean', 'empty', 'reset_drawer', 'sleep_on', 'sleep_off',
+		'night_light_on', 'night_light_off', 'panel_lock_on', 'panel_lock_off',
+		'power_on', 'power_off', 'set_wait_time',
+	] as $action) {
+		if (!str_contains($src, "'" . $action . "'")) {
+			$missing[] = $action;
+		}
+	}
+	if ($missing !== []) {
+		failg('G12', 'ALLOWED_ACTIONS missing: ' . implode(', ', $missing));
+	} else {
+		pass('G12', 'LR4 action set complete');
+	}
 }
 
 exit($fail);

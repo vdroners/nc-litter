@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace OCA\NcLitter\Controller;
 
 use OCA\NcLitter\AppInfo\Application;
+use OCA\NcLitter\Service\DeviceService;
 use OCA\NcLitter\Service\PermissionService;
-use OCA\NcLitter\Service\RobotService;
-use OCA\NcLitter\Util\Litter-RobotGroupAccess;
+use OCA\NcLitter\Util\LitterGroupAccess;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
@@ -23,7 +23,7 @@ class PageController extends Controller
 		IRequest $request,
 		private IConfig $config,
 		private PermissionService $permissions,
-		private RobotService $robots,
+		private DeviceService $devices,
 		private IURLGenerator $urlGenerator,
 	) {
 		parent::__construct(Application::APP_ID, $request);
@@ -34,23 +34,23 @@ class PageController extends Controller
 	public function index(): TemplateResponse
 	{
 		if (!$this->permissions->canUseApp()) {
-			return Litter-RobotGroupAccess::forbiddenPageResponse();
+			return LitterGroupAccess::forbiddenPageResponse();
 		}
 
 		Util::addScript(Application::APP_ID, 'nc_litter-main');
 		Util::addStyle(Application::APP_ID, 'style');
 
 		$version = $this->config->getAppValue(Application::APP_ID, 'installed_version', '0.1.0');
-		$primary = $this->robots->getPrimaryRobot();
+		$primary = $this->devices->getPrimaryDevice();
 		$bootstrap = [
 			'route_base' => rtrim($this->urlGenerator->linkToRoute('nc_litter.page.index'), '/'),
 			'app_version' => $version,
-			'operator_group' => $this->robots->getOperatorGroup(),
-			'retention_days' => $this->robots->getRetentionDays(),
+			'operator_group' => $this->devices->getOperatorGroup(),
+			'retention_days' => $this->devices->getRetentionDays(),
 			'is_admin' => $this->permissions->isAdmin(),
-			'robot' => $primary?->jsonSerialize(),
-			'allowed_actions' => RobotService::ALLOWED_ACTIONS,
-			'alfred' => $this->robots->getAlfredConfig(),
+			'device' => $primary?->jsonSerialize(),
+			'allowed_actions' => DeviceService::ALLOWED_ACTIONS,
+			'alfred' => $this->devices->getAlfredConfig(),
 		];
 
 		return new TemplateResponse(Application::APP_ID, 'main', [

@@ -10,7 +10,12 @@ use OCP\Security\ICrypto;
 use Psr\Log\LoggerInterface;
 
 /**
- * Encrypts robot / admin secrets at rest (`enc:v1:` + ICrypto).
+ * Encrypts device / admin secrets at rest (`enc:v1:` + ICrypto).
+ *
+ * The Whisker account password for a bound unit lives in
+ * `nc_litter_devices.creds_enc` (written by DeviceService::upsertDevice), not in
+ * appconfig. SECRET_KEYS lists the appconfig keys that hold a secret and must
+ * therefore never be echoed back to a client.
  */
 class AdminSecretCrypto
 {
@@ -18,8 +23,7 @@ class AdminSecretCrypto
 
 	/** @var list<string> */
 	public const SECRET_KEYS = [
-		'robot_password',
-		'home_wifi_password',
+		'whisker_password',
 	];
 
 	public function __construct(

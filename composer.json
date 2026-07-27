@@ -1,6 +1,6 @@
 {
 	"name": "vdroners/nc-litter",
-	"description": "Nextcloud Litter-Robot 960 (Alfred) control app",
+	"description": "Nextcloud app for the Whisker Litter-Robot 4",
 	"type": "project",
 	"license": "AGPL-3.0-or-later",
 	"autoload": {

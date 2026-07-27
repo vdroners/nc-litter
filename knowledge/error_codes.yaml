@@ -1,142 +1,110 @@
 errors:
   "0":
-    title: "No error"
-    detail: "Robot reports no active error."
+    title: "All in order"
+    detail: "Alfred reports no fault. The box is clean, calm, and standing by."
     action: ""
   "1":
-    title: "Left wheel dropped"
-    detail: "Left wheel is not contacting the floor."
-    action: "Place Alfred on a hard floor and clear debris under the wheel."
-  "2":
-    title: "Right wheel dropped"
-    detail: "Right wheel is not contacting the floor."
-    action: "Place Alfred on a hard floor and clear debris under the wheel."
-  "5":
-    title: "Left wheel jammed"
-    detail: "Left wheel cannot turn freely."
-    action: "Remove hair/debris from the left wheel well."
-  "6":
-    title: "Right wheel jammed"
-    detail: "Right wheel cannot turn freely."
-    action: "Remove hair/debris from the right wheel well."
-  "7":
-    title: "Left brush jammed"
-    detail: "Side brush is stuck."
-    action: "Clear the side brush and housing."
-  "8":
-    title: "Right brush / main brush jammed"
-    detail: "Main brush cannot spin."
-    action: "Remove and clean the extractors / main brush."
-  "9":
-    title: "Dust bin missing"
-    detail: "Bin is not seated."
-    action: "Re-seat the dust bin until it clicks."
-  "10":
-    title: "Bumper stuck"
-    detail: "Front bumper is pressed or jammed."
-    action: "Tap the bumper free and check for obstacles."
-  "11":
-    title: "Left cliff sensor dirty"
-    detail: "Cliff sensor reading is invalid."
-    action: "Wipe cliff sensors with a dry cloth."
-  "12":
-    title: "Right cliff sensor dirty"
-    detail: "Cliff sensor reading is invalid."
-    action: "Wipe cliff sensors with a dry cloth."
-  "13":
-    title: "Both cliff sensors dirty"
-    detail: "Cliff sensors need cleaning."
-    action: "Wipe all cliff sensors."
-  "14":
-    title: "Wheel dropped / navigation failed"
-    detail: "Navigation cannot proceed."
-    action: "Move Alfred to open floor space and restart clean."
-  "15":
-    title: "Navigation problem"
-    detail: "Alfred cannot build or follow a path."
-    action: "Clear clutter; ensure good lighting; retry."
-  "16":
-    title: "Battery issue"
-    detail: "Battery communication or charge fault."
-    action: "Reseat on Home Base; check contacts."
-  "17":
-    title: "Cliff sensors failed"
-    detail: "Safety cliff detection unavailable."
-    action: "Clean sensors; if persistent, service unit."
-  "18":
-    title: "Bin full"
-    detail: "Dust bin needs emptying."
-    action: "Empty the bin and re-seat it."
-  "21":
-    title: "Docking problem"
-    detail: "Could not dock on Home Base."
-    action: "Clear path to Home Base; wipe charging contacts."
-  "22":
-    title: "Software update required"
-    detail: "Robot firmware needs attention."
-    action: "Complete any pending local update via app once, then return to LAN MQTT."
-  "24":
-    title: "Localization failed"
-    detail: "Lost track of position."
-    action: "Carry Alfred to Home Base and start a new mission."
-  "25":
-    title: "Vacuum stalled"
-    detail: "Suction path blocked."
-    action: "Clear bin, filter, and vacuum path."
-  "26":
-    title: "Battery overheating"
-    detail: "Battery temperature too high."
-    action: "Let Alfred cool on a hard floor; do not charge until cool."
+    title: "Something needs a look"
+    detail: "Alfred has flagged a fault but has not named it. It is holding position until the matter is resolved."
+    action: "Check Alfred's status ring and the app for the specific condition, then clear it as advised."
+  "DFS":
+    title: "The waste drawer is full"
+    detail: "The drawer has reached capacity and Alfred will not run another cycle until it is emptied."
+    action: "Slide out the drawer, tie off and dispose of the liner, seat a fresh one, and return the drawer until it clicks."
+  "SDF":
+    title: "The waste drawer was full at startup"
+    detail: "Alfred woke to find the drawer already at capacity, so it declined to cycle."
+    action: "Empty the drawer and re-seat it; Alfred will resume its duties once it reports clear."
+  "BR":
+    title: "The bonnet has been removed"
+    detail: "The globe bonnet is off or not seated squarely, so Alfred has paused for safety."
+    action: "Refit the bonnet, aligning the tabs, and press until it settles flush before resuming."
+  "CSF":
+    title: "The cat sensor is troubled"
+    detail: "Alfred's weight sensor is reporting an implausible reading and cannot confirm the globe is clear."
+    action: "Ensure nothing is resting on or against the unit, wipe the base contacts, and let Alfred re-tare on a level floor."
+  "PD":
+    title: "Pinch guard tripped — something is in the path"
+    detail: "Alfred detected an obstruction at the globe opening and stopped the cycle at once to keep your companion safe."
+    action: "Clear anything caught in the opening, confirm the coast is clear, and Alfred will carry on."
+  "SCF":
+    title: "The globe motor has stalled"
+    detail: "The cleaning globe could not turn freely; Alfred halted the motor to avoid strain."
+    action: "Remove the bonnet and globe, clear any clumped litter or debris binding the rollers, refit, and resume."
+  "OTF":
+    title: "Motor over-torque"
+    detail: "The globe drew more force than expected while turning — usually a jam or an overfilled globe."
+    action: "Reduce the litter to the fill line, check for hardened clumps around the rim, then start a fresh cycle."
+  "SPF":
+    title: "Motor under-torque"
+    detail: "The globe turned with less resistance than expected, which can mean a slipped or disengaged drive."
+    action: "Reseat the globe firmly on its drive collar and confirm it rotates smoothly by hand before resuming."
+  "DHF":
+    title: "Drawer sensor (DFI) needs cleaning"
+    detail: "The drawer-full indicator's laser is obscured, so Alfred cannot judge how full the drawer is."
+    action: "Wipe the small laser window and its facing sensor inside the drawer bay with a dry cloth, then re-seat the drawer."
+  "DPF":
+    title: "Drawer position fault"
+    detail: "Alfred cannot confirm the waste drawer is closed and latched."
+    action: "Open the drawer fully, clear the runners of stray litter, and slide it home until it clicks."
+  "HPF":
+    title: "Hall / position sensor fault"
+    detail: "A globe-position sensor is not reporting, so Alfred cannot verify where the globe has stopped."
+    action: "Power-cycle Alfred at the wall for ten seconds; if the fault returns, the unit needs service."
+  "OFF":
+    title: "Alfred is offline"
+    detail: "The unit has dropped off the network and is not reporting its condition."
+    action: "Confirm Alfred has power, check the Wi-Fi and its DHCP reservation, then wait for it to rejoin."
+  "OFFLINE":
+    title: "Alfred has lost its Wi-Fi"
+    detail: "The connection to Alfred has lapsed; the last known state may be stale."
+    action: "Verify the router is up and Alfred is on the expected network; restore the link and telemetry will resume."
+  "USB":
+    title: "Power / USB fault"
+    detail: "Alfred is reporting an unstable supply or a USB accessory fault."
+    action: "Seat the power adapter firmly in the wall and the unit, avoid extension leads, and unplug any suspect USB accessory."
 not_ready:
   "0":
-    title: "Ready"
-    detail: "Robot is ready for commands."
+    title: "At your service"
+    detail: "Alfred is ready and awaiting your command."
     action: ""
   "1":
-    title: "Near full / near empty battery"
-    detail: "Battery state prevents starting."
-    action: "Charge Alfred before starting a clean."
-  "2":
-    title: "Bin full"
-    detail: "Cannot start while bin is full."
-    action: "Empty the dust bin."
-  "3":
-    title: "Path blocked"
-    detail: "Start location is obstructed."
-    action: "Clear the area around Alfred."
-  "4":
-    title: "Not on flat surface"
-    detail: "Robot is tilted or lifted."
-    action: "Place on flat floor."
-  "5":
-    title: "Busy"
-    detail: "Already running a mission or docking."
-    action: "Wait or pause/stop the current cycle."
-  "6":
-    title: "Handle lifted / carrying"
-    detail: "Detected as being carried."
-    action: "Set down gently and wait a few seconds."
-  "7":
-    title: "Charging / docked constraint"
-    detail: "Current dock/charge state blocks this command."
-    action: "Undock with Clean or wait until charged."
-  "8":
-    title: "Software updating"
-    detail: "Firmware update in progress."
-    action: "Wait for update to finish."
-  "9":
-    title: "Pad / accessory issue"
-    detail: "Accessory not ready (if equipped)."
-    action: "Check accessories; N/A for bare 960."
-  "15":
-    title: "Charging — settling on the dock"
-    detail: "Seen briefly right after Alfred docks: it is charging and not yet ready to accept a new command. It clears on its own within a few seconds."
-    action: "No action needed — wait a moment and retry."
-  "16":
-    title: "Just docked / busy"
-    detail: "Robot is on the dock and finishing up; not ready for a new command yet."
-    action: "Give it a few seconds, then retry."
-  "31":
-    title: "Docked and charging"
-    detail: "Command not available while charging on the dock."
-    action: "Start a clean to undock, or wait until charged."
+    title: "Just a moment"
+    detail: "Alfred is briefly occupied and not ready for that request yet. It will free itself shortly."
+    action: "Wait a few seconds and try again."
+  "CCP":
+    title: "Cleaning cycle in progress"
+    detail: "Alfred is mid-cycle, tidying the globe. New commands wait until it finishes."
+    action: "Give it a moment — the cycle runs for well under two minutes."
+  "CCC":
+    title: "Cycle just finished — settling"
+    detail: "Alfred has completed a clean and is settling back to ready. This clears on its own."
+    action: "No action needed; Alfred will present itself as ready momentarily."
+  "EC":
+    title: "Emptying the globe"
+    detail: "Alfred is running an empty cycle to clear the globe. It cannot take other commands until done."
+    action: "Let the empty cycle finish, then proceed."
+  "P":
+    title: "Cycle paused"
+    detail: "The cleaning cycle is paused — often because a presence was sensed near the globe."
+    action: "Once the coast is clear, resume the cycle or wait for Alfred to continue on its own."
+  "CD":
+    title: "A guest has been detected"
+    detail: "Alfred sensed your companion in or near the globe and is politely waiting before it cycles."
+    action: "No action needed — Alfred will proceed once its guest has departed."
+  "CSI":
+    title: "Cat sensor interrupted — holding"
+    detail: "The weight sensor was interrupted, so Alfred is holding the cycle out of courtesy."
+    action: "Give it a moment; Alfred resumes automatically once the sensor settles."
+  "CST":
+    title: "Cat sensor timing"
+    detail: "Alfred is running its post-visit timer before cycling, so the litter has a moment to settle."
+    action: "No action needed — the cycle will begin shortly."
+  "PWRU":
+    title: "Powering up"
+    detail: "Alfred is starting and running its self-check before it accepts commands."
+    action: "Wait for the status ring to settle to ready."
+  "SLEEP":
+    title: "Alfred is resting"
+    detail: "The unit is in its scheduled sleep window and will not cycle until it wakes."
+    action: "Wait for the sleep window to end, or adjust the schedule if you need it active now."

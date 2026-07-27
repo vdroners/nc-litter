@@ -3,23 +3,21 @@
 		<header class="nc-litter-view__header">
 			<h2>History</h2>
 			<p class="nc-litter-muted">
-				Missions recorded locally since install. Nothing is imported from the
-				iRobot cloud.
+				Cycles recorded locally since install. Nothing is imported from the Whisker
+				cloud's own activity log.
 			</p>
 		</header>
 
-		<!-- Lifetime rollup — informative even before the first NC-recorded mission -->
+		<!-- Lifetime band — informative even before the first NC-recorded cycle -->
 		<section class="nc-litter-panel" data-testid="lifetime">
 			<h3>Lifetime service</h3>
 			<LifetimeStats
-				:bbrun="store.bbrun"
-				:bbmssn="store.bbmssn"
-				:sku="store.sku"
-				:software-version="store.softwareVersion"
-				:robot-name="robotName" />
+				:state="store.state"
+				:cycles="cycles"
+				:device-name="deviceName" />
 		</section>
 
-		<Achievements :bbrun="store.bbrun" :bbmssn="store.bbmssn" :missions="missions" />
+		<Achievements :state="store.state || {}" :cycles="cycles" />
 
 		<div class="nc-litter-actions">
 			<NcButton type="secondary" :href="exportUrl('csv')" download data-testid="export-csv">
@@ -31,16 +29,16 @@
 			<NcButton @click="reload">Refresh</NcButton>
 		</div>
 
-		<div class="nc-litter-panel" data-testid="mission-list">
-			<h3>Missions</h3>
+		<div class="nc-litter-panel" data-testid="cycle-list">
+			<h3>Cycles</h3>
 
-			<div v-if="!missions.length" class="nc-litter-empty">
-				<span class="nc-litter-empty__icon" aria-hidden="true">🧹</span>
-				<p class="nc-litter-empty__title">No cleaning missions recorded yet</p>
+			<div v-if="!cycles.length" class="nc-litter-empty">
+				<span class="nc-litter-empty__icon" aria-hidden="true">🐈</span>
+				<p class="nc-litter-empty__title">No cycles recorded yet</p>
 				<p class="nc-litter-muted">
-					When {{ robotName }} runs a clean it appears here with a coverage figure,
-					duration and a phase timeline. Lifetime totals above come straight from
-					the robot.
+					When {{ deviceName }} runs a cycle it appears here with its duration, the cat
+					weight it recorded and the drawer level afterwards. The lifetime totals above
+					come straight from the unit's own odometer.
 				</p>
 				<div v-if="store.canOperate" class="nc-litter-actions">
 					<NcButton type="primary" :disabled="!!store.actionPending" @click="cleanNow">
@@ -50,29 +48,32 @@
 			</div>
 
 			<ul v-else class="nc-litter-history">
-				<li v-for="mission in missions" :key="mission.id">
+				<li v-for="cycle in cycles" :key="cycle.id">
 					<button
-						:class="['nc-litter-history__row', { active: selectedId === mission.id }]"
-						:data-mission="mission.id"
+						:class="['nc-litter-history__row', { active: selectedId === cycle.id }]"
+						:data-cycle="cycle.id"
 						type="button"
-						@click="select(mission.id)">
+						@click="select(cycle.id)">
 						<span class="nc-litter-history__head">
-							<span class="nc-litter-badge" :class="`is-${outcomeTone(mission)}`">{{ outcomeLabel(mission) }}</span>
-							<span class="nc-litter-history__when">{{ whenLabel(mission) }}</span>
+							<span class="nc-litter-badge" :class="`is-${outcomeTone(cycle)}`">{{ outcomeLabel(cycle) }}</span>
+							<span class="nc-litter-history__when">{{ whenLabel(cycle) }}</span>
 						</span>
 						<span class="nc-litter-history__facts">
-							<span>{{ cycleLabel(mission) }}</span>
-							<span v-if="durationOf(mission)">· {{ durationOf(mission) }}</span>
-							<span v-if="mission.sqft">· {{ Number(mission.sqft).toLocaleString() }} sq ft</span>
+							<span>{{ triggerLabel(cycle) }}</span>
+							<span v-if="durationOf(cycle)">· {{ durationOf(cycle) }}</span>
+							<span v-if="cycle.cat_weight">· ⚖️ {{ catWeightLabel(cycle.cat_weight) }}</span>
+							<span v-if="cycle.drawer_after !== null && cycle.drawer_after !== undefined">
+								· 🗑️ {{ drawerLabel(cycle.drawer_after) }} after
+							</span>
 						</span>
 					</button>
 				</li>
 			</ul>
 		</div>
 
-		<div v-if="selected" class="nc-litter-panel" data-testid="mission-detail">
+		<div v-if="selected" class="nc-litter-panel" data-testid="cycle-detail">
 			<div class="nc-litter-view__header">
-				<h3>{{ missionTitle(selected) }}</h3>
+				<h3>{{ cycleTitle(selected) }}</h3>
 				<NcButton type="tertiary" @click="clear">Close</NcButton>
 			</div>
 			<dl class="nc-litter-stats">
@@ -81,10 +82,10 @@
 					<dd>{{ stat.value }}</dd>
 				</div>
 			</dl>
-			<MissionTimeline
-				:phases="selectedPhases"
+			<CycleTimeline
+				:statuses="selectedStatuses"
 				:end-ts="selected.ended_at || null"
-				title="Phase bands" />
+				title="Status bands" />
 		</div>
 	</div>
 </template>
@@ -93,16 +94,23 @@
 import { NcButton } from '@nextcloud/vue'
 
 import Achievements from '../components/Achievements.vue'
+import CycleTimeline from '../components/CycleTimeline.vue'
 import LifetimeStats from '../components/LifetimeStats.vue'
-import MissionTimeline from '../components/MissionTimeline.vue'
-import { exportMissionsUrl } from '../services/api.js'
-import { useRobotStore } from '../store/robot.js'
-import { durationLabel, timeLabel, timestampLabel } from '../utils/format.js'
+import { exportCyclesUrl } from '../services/api.js'
+import { useDeviceStore } from '../store/device.js'
+import {
+	catWeightLabel,
+	drawerLabel,
+	durationLabel,
+	statusLabel,
+	timeLabel,
+	timestampLabel,
+} from '../utils/format.js'
 
 export default {
 	name: 'HistoryView',
 
-	components: { Achievements, LifetimeStats, MissionTimeline, NcButton },
+	components: { Achievements, CycleTimeline, LifetimeStats, NcButton },
 
 	data() {
 		return { selectedId: null }
@@ -110,116 +118,152 @@ export default {
 
 	computed: {
 		store() {
-			return useRobotStore()
+			return useDeviceStore()
 		},
-		missions() {
-			return this.store.missions
+		cycles() {
+			return this.store.cycles
 		},
-		robotName() {
-			return (this.store.state && this.store.state.name)
-				|| (this.store.bootstrap.robot && this.store.bootstrap.robot.name)
-				|| 'the robot'
+		deviceName() {
+			return this.store.deviceName
 		},
 		selected() {
-			return this.store.selectedMission
+			return this.store.selectedCycle
 		},
-		selectedPhases() {
-			const mission = this.selected
-			if (!mission) {
+		/** Detail rows carry `events` ({ ts, status }) straight from the DB. */
+		selectedStatuses() {
+			const cycle = this.selected
+			if (!cycle) {
 				return []
 			}
-			return mission.phases || mission.phase_events || []
+			return cycle.events || []
 		},
 		detailStats() {
-			const mission = this.selected || {}
+			const cycle = this.selected || {}
 			const rows = [
-				{ label: 'Started', value: timestampLabel(mission.started_at) || '—' },
-				{ label: 'Ended', value: timestampLabel(mission.ended_at) || 'in progress' },
+				{ label: 'Started', value: timestampLabel(cycle.started_at) || '—' },
+				{ label: 'Ended', value: timestampLabel(cycle.ended_at) || 'in progress' },
 			]
-			if (mission.started_at && mission.ended_at) {
-				rows.push({ label: 'Duration', value: durationLabel(Number(mission.ended_at) - Number(mission.started_at)) })
+			const seconds = Number(cycle.duration_s)
+			if (Number.isFinite(seconds) && seconds > 0) {
+				rows.push({ label: 'Duration', value: durationLabel(seconds) })
+			} else if (cycle.started_at && cycle.ended_at) {
+				rows.push({ label: 'Duration', value: durationLabel(Number(cycle.ended_at) - Number(cycle.started_at)) })
 			}
-			if (mission.sqft !== undefined && mission.sqft !== null) {
-				rows.push({ label: 'Area', value: `${Number(mission.sqft).toLocaleString()} sq ft` })
+			if (cycle.status_final) {
+				rows.push({ label: 'Final status', value: statusLabel(cycle.status_final) })
 			}
-			if (mission.error) {
-				rows.push({ label: 'Error', value: String(mission.error) })
+			if (cycle.drawer_before !== null && cycle.drawer_before !== undefined) {
+				rows.push({ label: 'Drawer before', value: drawerLabel(cycle.drawer_before) })
 			}
-			rows.push({ label: 'Outcome', value: mission.result || mission.outcome || 'unknown' })
+			if (cycle.drawer_after !== null && cycle.drawer_after !== undefined) {
+				rows.push({ label: 'Drawer after', value: drawerLabel(cycle.drawer_after) })
+			}
+			if (cycle.cat_weight) {
+				rows.push({ label: 'Cat weight', value: catWeightLabel(cycle.cat_weight) })
+			}
+			if (cycle.decoded_error && cycle.decoded_error.title && Number(cycle.error_code || 0) !== 0) {
+				rows.push({ label: 'Condition', value: String(cycle.decoded_error.title) })
+			}
+			rows.push({ label: 'Outcome', value: cycle.result || 'unknown' })
 			return rows
 		},
 	},
 
 	async mounted() {
-		await this.store.loadMissions()
+		await this.store.loadCycles()
 	},
 
 	methods: {
+		catWeightLabel,
+		drawerLabel,
+
 		/**
 		 * @param {'csv'|'json'} format
 		 * @returns {string} download URL
 		 */
 		exportUrl(format) {
-			return exportMissionsUrl(format, this.store.robotId)
+			return exportCyclesUrl(format, this.store.deviceId)
 		},
 
 		async reload() {
-			await this.store.loadMissions()
+			await this.store.loadCycles()
 		},
 
 		async cleanNow() {
-			await this.store.doAction('clean')
+			await this.store.postAction('clean')
 		},
 
 		/**
-		 * @param {number} id mission id
+		 * @param {number} id cycle id
 		 */
 		async select(id) {
 			this.selectedId = id
-			await this.store.loadMission(id)
+			await this.store.loadCycle(id)
 		},
 
 		clear() {
 			this.selectedId = null
-			this.store.clearMission()
+			this.store.clearCycle()
 		},
 
 		/**
-		 * @param {object} mission history row
-		 * @returns {'complete'|'error'|'open'} outcome bucket
+		 * @param {object} cycle history row
+		 * @returns {'complete'|'fault'|'interrupted'|'open'} outcome bucket
 		 */
-		outcome(mission) {
-			if (Number(mission.error_code || mission.error || 0) !== 0) {
-				return 'error'
+		outcome(cycle) {
+			if (Number(cycle.error_code || 0) !== 0 || String(cycle.result || '') === 'fault') {
+				return 'fault'
 			}
-			if (!mission.ended_at) {
+			if (!cycle.ended_at) {
 				return 'open'
 			}
-			const result = String(mission.result || mission.outcome || '')
-			return result === 'error' ? 'error' : 'complete'
+			return String(cycle.result || '') === 'interrupted' ? 'interrupted' : 'complete'
 		},
 
-		/** @param {object} mission */
-		outcomeTone(mission) {
-			const o = this.outcome(mission)
-			return o === 'complete' ? 'ok' : (o === 'error' ? 'danger' : 'run')
+		/** @param {object} cycle */
+		outcomeTone(cycle) {
+			const o = this.outcome(cycle)
+			if (o === 'complete') {
+				return 'ok'
+			}
+			if (o === 'fault') {
+				return 'danger'
+			}
+			return o === 'interrupted' ? 'warn' : 'run'
 		},
 
-		/** @param {object} mission */
-		outcomeLabel(mission) {
-			const o = this.outcome(mission)
-			return o === 'complete' ? 'Complete' : (o === 'error' ? 'Error' : 'In progress')
+		/** @param {object} cycle */
+		outcomeLabel(cycle) {
+			const o = this.outcome(cycle)
+			if (o === 'complete') {
+				return 'Complete'
+			}
+			if (o === 'fault') {
+				return 'Fault'
+			}
+			return o === 'interrupted' ? 'Interrupted' : 'Running'
 		},
 
-		/** @param {object} mission */
-		cycleLabel(mission) {
-			return mission.cycle && mission.cycle !== 'none' ? mission.cycle : 'mission'
+		/** @param {object} cycle */
+		triggerLabel(cycle) {
+			const trigger = String(cycle.trigger || '')
+			if (trigger === 'manual') {
+				return 'manual cycle'
+			}
+			if (trigger === 'empty') {
+				return 'empty cycle'
+			}
+			return trigger || 'clean cycle'
 		},
 
-		/** @param {object} mission */
-		durationOf(mission) {
-			if (mission.started_at && mission.ended_at) {
-				return durationLabel(Number(mission.ended_at) - Number(mission.started_at))
+		/** @param {object} cycle */
+		durationOf(cycle) {
+			const seconds = Number(cycle.duration_s)
+			if (Number.isFinite(seconds) && seconds > 0) {
+				return durationLabel(seconds)
+			}
+			if (cycle.started_at && cycle.ended_at) {
+				return durationLabel(Number(cycle.ended_at) - Number(cycle.started_at))
 			}
 			return ''
 		},
@@ -227,11 +271,11 @@ export default {
 		/**
 		 * Relative-ish date: "Today 14:20" / "Yesterday 09:00" / full timestamp.
 		 *
-		 * @param {object} mission
+		 * @param {object} cycle
 		 * @returns {string}
 		 */
-		whenLabel(mission) {
-			const ts = Number(mission.started_at)
+		whenLabel(cycle) {
+			const ts = Number(cycle.started_at)
 			if (!Number.isFinite(ts) || ts <= 0) {
 				return '—'
 			}
@@ -249,12 +293,11 @@ export default {
 		},
 
 		/**
-		 * @param {object} mission history row
+		 * @param {object} cycle history row
 		 * @returns {string} detail headline
 		 */
-		missionTitle(mission) {
-			const cycle = mission.cycle && mission.cycle !== 'none' ? mission.cycle : 'mission'
-			return `#${mission.id} · ${cycle}`
+		cycleTitle(cycle) {
+			return `#${cycle.id} · ${this.triggerLabel(cycle)}`
 		},
 	},
 }

@@ -6,78 +6,176 @@ import {
 	evaluateAchievements,
 } from '@/utils/achievements.js'
 
-// Alfred's real lifetime counters (Litter-Robot 960, veteran unit) — the feature must
-// light up immediately from data the robot already reports.
+const DAY_S = 86400
+const nowS = Math.floor(Date.now() / 1000)
+
+/**
+ * Build a recorded cycle row. `hour` is local, because Night Owl is judged on
+ * the household's clock, not UTC.
+ *
+ * @param {object} spec cycle shape overrides
+ * @returns {object} cycle row shaped like Cycle::jsonSerialize()
+ */
+function cycle({ id, daysAgo = 0, hour = 12, drawerBefore = 40, drawerAfter = 45, errorCode = 0, catWeight = 11.2 }) {
+	const date = new Date((nowS - daysAgo * DAY_S) * 1000)
+	date.setHours(hour, 0, 0, 0)
+	const started = Math.floor(date.getTime() / 1000)
+	return {
+		id,
+		started_at: started,
+		ended_at: started + 90,
+		duration_s: 90,
+		result: errorCode === 0 ? 'complete' : 'fault',
+		error_code: errorCode,
+		drawer_before: drawerBefore,
+		drawer_after: drawerAfter,
+		cat_weight: catWeight,
+		status_final: errorCode === 0 ? 'ready' : 'fault',
+	}
+}
+
+// A veteran unit: the lifetime odometer must light badges up immediately, even
+// before NC has recorded many cycles of its own.
 const ALFRED = {
-	bbrun: { hr: 922, min: 39, sqft: 2816, nStuck: 1068, nCliffsF: 57318, nCliffsR: 23089 },
-	bbmssn: { nMssn: 1793, nMssnOk: 249, nMssnC: 1037, nMssnF: 507 },
-	missions: [],
+	state: {
+		cycles_total: 1240,
+		cycle_count: 12,
+		cycles_since_empty: 12,
+		cat_weight: 11.4,
+	},
+	cycles: [
+		// newest-first, as the store returns them
+		cycle({ id: 6, daysAgo: 0, hour: 23, drawerBefore: 60, drawerAfter: 64 }),
+		cycle({ id: 5, daysAgo: 0, hour: 2, drawerBefore: 55, drawerAfter: 60 }),
+		cycle({ id: 4, daysAgo: 1, hour: 14, drawerBefore: 80, drawerAfter: 3 }), // tidy empty
+		cycle({ id: 3, daysAgo: 2, hour: 9, drawerBefore: 45, drawerAfter: 50 }),
+		cycle({ id: 2, daysAgo: 3, hour: 10, errorCode: 1 }), // a fault, 3 days ago
+		cycle({ id: 1, daysAgo: 4, hour: 8, drawerBefore: 95, drawerAfter: 4 }), // empty, but late
+	],
 }
 
 const byId = (list) => Object.fromEntries(list.map((a) => [a.id, a]))
 
-describe('achievements', () => {
-	it('reduces raw counters into the metric bag', () => {
+describe('achievement metrics', () => {
+	it('reduces the state DTO + cycle log into the metric bag', () => {
 		const m = achievementMetrics(ALFRED)
-		expect(m.missionsTotal).toBe(1793)
-		expect(Math.round(m.runHours)).toBe(923) // 922h39m ≈ 922.65
-		expect(m.areaSqft).toBe(2816)
-		expect(m.cliffEvents).toBe(57318 + 23089)
-		expect(m.errorFreeMissions).toBe(249) // floored by nMssnOk
+		expect(m.cyclesTotal).toBe(1240)
+		expect(m.cyclesSinceEmpty).toBe(12)
+		expect(m.catWeightLbs).toBeCloseTo(11.4, 5)
+		expect(m.recordedCycles).toBe(6)
+		// Two cycles ended with an empty drawer; only one of them was emptied
+		// before the 90% "diligent" mark.
+		expect(m.totalEmpties).toBe(2)
+		expect(m.tidyEmpties).toBe(1)
+		// 23:00 and 02:00 count as night; 14/09/10/08 do not.
+		expect(m.nightCycles).toBe(2)
+		expect(m.activeDays).toBe(5)
+		// Newest-first: four clean cycles before the faulted one breaks the streak.
+		expect(m.errorFreeStreak).toBe(4)
+		// The newest fault was 3 days ago at 10:00, so the whole-day count is 2 or 3
+		// depending on the time of day the spec runs.
+		expect(m.faultFreeDays).toBeGreaterThanOrEqual(2)
+		expect(m.faultFreeDays).toBeLessThanOrEqual(3)
 	})
 
-	it('unlocks the veteran tiers Alfred has earned', () => {
+	it('never claims a fault-free streak with no history at all', () => {
+		const m = achievementMetrics({ state: { cycles_total: 5 }, cycles: [] })
+		expect(m.faultFreeDays).toBe(0)
+		expect(m.errorFreeStreak).toBe(0)
+		expect(m.cyclesTotal).toBe(5)
+	})
+
+	it('floors the odometer with the recorded row count', () => {
+		// A unit that reports no lifetime counter still gets credit for what we
+		// logged ourselves.
+		const m = achievementMetrics({ state: {}, cycles: ALFRED.cycles })
+		expect(m.cyclesTotal).toBe(6)
+	})
+})
+
+describe('achievement catalogue', () => {
+	it('unlocks the odometer tiers this unit has earned', () => {
 		const a = byId(evaluateAchievements(ALFRED))
-		expect(a['first-sweep'].unlocked).toBe(true)
-		expect(a['century-club'].unlocked).toBe(true)
-		expect(a['marathon-maid'].unlocked).toBe(true) // 1793 >= 1000
-		expect(a['day-of-duty'].unlocked).toBe(true)
-		expect(a['fortnight-footman'].unlocked).toBe(true) // 922h >= 500
-		expect(a['estate-keeper'].unlocked).toBe(false) // 2816 < 10000 sqft
-		expect(a['edge-of-glory'].unlocked).toBe(true) // 80k cliff events
-		expect(a['clean-sweep'].unlocked).toBe(true) // nMssnOk 249
+		expect(a['first-flush'].unlocked).toBe(true)
+		expect(a['ten-tumbles'].unlocked).toBe(true)
+		expect(a['fifty-scoops'].unlocked).toBe(true)
+		expect(a['century-of-scoops'].unlocked).toBe(true)
+		expect(a['five-hundred-sifts'].unlocked).toBe(true)
+		expect(a['thousand-tumbles'].unlocked).toBe(true) // 1240 >= 1000
+		expect(a['litter-legend'].unlocked).toBe(false) // 1240 < 2500
 	})
 
 	it('reports progress for locked achievements', () => {
 		const a = byId(evaluateAchievements(ALFRED))
-		// Estate Keeper: 2816 / 10000 sqft.
-		expect(a['estate-keeper'].unlocked).toBe(false)
-		expect(a['estate-keeper'].progress).toBeCloseTo(0.2816, 3)
-		expect(a['estate-keeper'].value).toBe(2816)
-		expect(a['estate-keeper'].goal).toBe(10000)
+		expect(a['litter-legend'].value).toBe(1240)
+		expect(a['litter-legend'].goal).toBe(2500)
+		expect(a['litter-legend'].progress).toBeCloseTo(0.496, 3)
+		// Drawer Diligence: 1 tidy empty of 10.
+		expect(a['drawer-diligence'].unlocked).toBe(false)
+		expect(a['drawer-diligence'].progress).toBeCloseTo(0.1, 5)
 	})
 
-	it('gates Sure-Footed on the stuck-rate, not just hours', () => {
-		// Alfred: 1068 stuck / ~922h ≈ 1.16/h → above 1, so NOT sure-footed.
-		expect(byId(evaluateAchievements(ALFRED))['sure-footed'].unlocked).toBe(false)
-		// A tidier robot with the same hours passes the gate.
-		const tidy = { bbrun: { hr: 100, nStuck: 20 }, bbmssn: {}, missions: [] }
-		expect(byId(evaluateAchievements(tidy))['sure-footed'].unlocked).toBe(true)
+	it('puts the cat in exactly one weight band', () => {
+		const bands = (lbs) => {
+			const a = byId(evaluateAchievements({ state: { cat_weight: lbs }, cycles: [] }))
+			return ['featherweight', 'house-panther', 'certified-chonk'].filter((id) => a[id].unlocked)
+		}
+		expect(bands(6.5)).toEqual(['featherweight'])
+		expect(bands(11.4)).toEqual(['house-panther'])
+		expect(bands(17)).toEqual(['certified-chonk'])
+		// No weight recorded means no band at all — and no Weigh-In either.
+		expect(bands(0)).toEqual([])
+		const none = byId(evaluateAchievements({ state: {}, cycles: [] }))
+		expect(none['weigh-in'].unlocked).toBe(false)
 	})
 
-	it('derives streak + comeback from recorded mission timestamps', () => {
-		const day = (iso) => Math.floor(Date.parse(iso) / 1000)
-		const missions = [
-			// newest-first, as the store returns them
-			{ id: 4, started_at: day('2026-07-25T10:00:00Z'), error_code: 0 },
-			{ id: 3, started_at: day('2026-07-24T10:00:00Z'), error_code: 0 }, // clean after error → comeback
-			{ id: 2, started_at: day('2026-07-24T08:00:00Z'), error_code: 5 },
-			{ id: 1, started_at: day('2026-07-23T10:00:00Z'), error_code: 0 },
-		]
-		const m = achievementMetrics({ bbmssn: { nMssnOk: 0 }, bbrun: {}, missions })
-		expect(m.activeDays).toBe(3)
-		expect(m.hasComeback).toBe(true)
-		const a = byId(evaluateAchievements({ bbmssn: { nMssnOk: 0 }, bbrun: {}, missions }))
-		expect(a['streak-3'].unlocked).toBe(true)
-		expect(a['streak-7'].unlocked).toBe(false)
-		expect(a['comeback'].unlocked).toBe(true)
+	it('awards the housekeeping and night badges off the cycle log', () => {
+		const a = byId(evaluateAchievements(ALFRED))
+		expect(a['drawer-duty'].unlocked).toBe(true) // 2 empties
+		expect(a['weigh-in'].unlocked).toBe(true)
+		expect(a['tidy-habit'].unlocked).toBe(true) // 5 active days
+		expect(a['week-of-whiskers'].unlocked).toBe(false) // needs 7
+		expect(a['night-owl'].unlocked).toBe(false) // 2 of 5 night cycles
+		expect(a['no-fuss'].unlocked).toBe(false) // streak of 4, needs 5
+		expect(a['clean-machine'].unlocked).toBe(false) // fault 3 days ago
+	})
+
+	it('unlocks Clean Machine after a month of fault-free service', () => {
+		const clean = {
+			state: { cycles_total: 300 },
+			cycles: [
+				cycle({ id: 3, daysAgo: 0 }),
+				cycle({ id: 2, daysAgo: 20 }),
+				cycle({ id: 1, daysAgo: 40 }),
+			],
+		}
+		const m = achievementMetrics(clean)
+		// The oldest recorded cycle is 40 days back at local noon, so the whole-day
+		// count lands on 39 or 40 depending on the time of day the spec runs.
+		expect(m.faultFreeDays).toBeGreaterThanOrEqual(39)
+		expect(byId(evaluateAchievements(clean))['clean-machine'].unlocked).toBe(true)
 	})
 
 	it('summarizes unlocked vs total', () => {
 		const s = achievementSummary(evaluateAchievements(ALFRED))
-		expect(s.total).toBeGreaterThan(10)
+		expect(s.total).toBeGreaterThanOrEqual(20)
 		expect(s.unlocked).toBeGreaterThan(0)
 		expect(s.unlocked).toBeLessThanOrEqual(s.total)
+	})
+
+	it('keeps the badge shape the component renders', () => {
+		for (const a of evaluateAchievements(ALFRED)) {
+			expect(typeof a.id).toBe('string')
+			expect(typeof a.title).toBe('string')
+			expect(a.blurb.length).toBeGreaterThan(0)
+			expect(a.icon.length).toBeGreaterThan(0)
+			expect(['bronze', 'silver', 'gold']).toContain(a.tier)
+			expect(typeof a.unlocked).toBe('boolean')
+			expect(Number.isFinite(a.value)).toBe(true)
+			expect(a.goal).toBeGreaterThan(0)
+			expect(a.progress).toBeGreaterThanOrEqual(0)
+			expect(a.progress).toBeLessThanOrEqual(1)
+		}
 	})
 
 	it('is safe on empty input', () => {

@@ -16,7 +16,7 @@ Vue.use(PiniaVuePlugin)
 
 // The admin section template ships a no-JS HTML form that always works. When it
 // also renders #nc-litter-admin-root, this entry upgrades that spot to the Vue
-// panel (discover / hold-HOME onboarding / connect test).
+// panel (Whisker account onboarding / device config / connect test).
 const el = document.getElementById('nc-litter-admin-root')
 
 if (el) {

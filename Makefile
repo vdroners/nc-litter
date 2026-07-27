@@ -8,7 +8,7 @@ DATE ?= $(shell date +%F)
 
 .PHONY: build test deploy ship bridge-up bridge-down bridge-test \
 	bump-patch bump-minor gate-preflight gate-live gate-gui \
-	phpunit run-phpunit helper-install helper-test helper-up helper-down
+	phpunit run-phpunit
 
 build:
 	cd "$(ROOT)" && npm run build
@@ -26,8 +26,6 @@ _bump:
 	next="$$maj.$$min.$$pat"; \
 	sed -i "s#<version>$$cur</version>#<version>$$next</version>#" "$(ROOT)appinfo/info.xml"; \
 	sed -i "s#\"version\": \"$$cur\"#\"version\": \"$$next\"#" "$(ROOT)package.json"; \
-	sed -i "s#\"version\": \"$$cur\"#\"version\": \"$$next\"#" "$(ROOT)bridge/package.json"; \
-	sed -i "s#\"version\": \"$$cur\"#\"version\": \"$$next\"#" "$(ROOT)wifi-helper/package.json"; \
 	if [ -f "$(ROOT)package-lock.json" ]; then \
 		sed -i "0,/\"version\": \"$$cur\"/s##\"version\": \"$$next\"#" "$(ROOT)package-lock.json"; \
 		sed -i "0,/\"version\": \"$$cur\"/s##\"version\": \"$$next\"#" "$(ROOT)package-lock.json"; \
@@ -50,38 +48,12 @@ bridge-up:
 bridge-down:
 	$(BRIDGE_COMPOSE) down
 
+# Python bridge tests (pytest, pylitterbot mocked). Runs in the bridge image so
+# the host needs no Python deps.
 bridge-test:
-	cd "$(ROOT)bridge" && npm test
-
-helper-test:
-	cd "$(ROOT)wifi-helper" && npm test
-
-# Install host Soft-AP helper (needs sudo). Generates token into /etc if missing.
-helper-install:
-	@if [ -f "$(ROOT)wifi-helper/package-lock.json" ]; then \
-		cd "$(ROOT)wifi-helper" && npm ci --omit=dev; \
-	else \
-		cd "$(ROOT)wifi-helper" && npm install --omit=dev; \
-	fi
-	@token=$$(grep -E '^LITTER_WIFI_HELPER_TOKEN=' "$(ROOT).env" 2>/dev/null | cut -d= -f2-); \
-	if [ -z "$$token" ]; then token=$$(openssl rand -hex 16); \
-		grep -q '^LITTER_WIFI_HELPER_TOKEN=' "$(ROOT).env" 2>/dev/null \
-			&& sed -i "s/^LITTER_WIFI_HELPER_TOKEN=.*/LITTER_WIFI_HELPER_TOKEN=$$token/" "$(ROOT).env" \
-			|| echo "LITTER_WIFI_HELPER_TOKEN=$$token" >> "$(ROOT).env"; \
-		echo "Wrote LITTER_WIFI_HELPER_TOKEN to .env"; \
-	fi; \
-	echo "LITTER_WIFI_HELPER_TOKEN=$$token" | sudo tee /etc/nc-litter-wifi-helper.env >/dev/null; \
-	echo "LITTER_WIFI_IFACE=wlp2s0" | sudo tee -a /etc/nc-litter-wifi-helper.env >/dev/null; \
-	sudo cp "$(ROOT)wifi-helper/systemd/nc-litter-wifi-helper.service" /etc/systemd/system/; \
-	sudo systemctl daemon-reload; \
-	sudo systemctl enable --now nc-litter-wifi-helper; \
-	sudo systemctl status nc-litter-wifi-helper --no-pager || true
-
-helper-up:
-	sudo systemctl start nc-litter-wifi-helper
-
-helper-down:
-	sudo systemctl stop nc-litter-wifi-helper
+	cd "$(ROOT)bridge" && ( command -v pytest >/dev/null 2>&1 && pytest -q \
+		|| docker run --rm -v "$(ROOT)bridge:/app" -w /app python:3.12-slim \
+			sh -c "pip install -q -r requirements.txt pytest && pytest -q" )
 
 run-phpunit:
 	@if [ -f "$(ROOT)vendor/bin/phpunit" ] && command -v php >/dev/null 2>&1; then \
@@ -95,7 +67,7 @@ run-phpunit:
 
 phpunit: run-phpunit
 
-test: phpunit bridge-test helper-test
+test: phpunit bridge-test
 	cd "$(ROOT)" && npm run test
 
 deploy: build

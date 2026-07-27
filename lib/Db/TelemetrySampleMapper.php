@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\Db;
 
+use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Db\QBMapper;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
@@ -17,15 +18,48 @@ class TelemetrySampleMapper extends QBMapper
 	}
 
 	/** @return TelemetrySample[] */
-	public function findByMission(int $missionId, int $limit = 5000): array
+	public function findByCycle(int $cycleId, int $limit = 5000): array
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from($this->getTableName())
-			->where($qb->expr()->eq('mission_id', $qb->createNamedParameter($missionId, IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->eq('cycle_id', $qb->createNamedParameter($cycleId, IQueryBuilder::PARAM_INT)))
 			->orderBy('ts', 'ASC')
 			->setMaxResults(max(1, $limit));
 		return $this->findEntities($qb);
+	}
+
+	/** @return TelemetrySample[] */
+	public function findByDevice(int $deviceId, int $limit = 5000): array
+	{
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
+			->orderBy('ts', 'ASC')
+			->setMaxResults(max(1, $limit));
+		return $this->findEntities($qb);
+	}
+
+	/**
+	 * Newest sample for a device, or null when none has been recorded yet.
+	 * Used to edge-detect state changes (drawer full, litter low) so a
+	 * condition notifies once instead of on every poll.
+	 */
+	public function latest(int $deviceId): ?TelemetrySample
+	{
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
+			->orderBy('ts', 'DESC')
+			->addOrderBy('id', 'DESC')
+			->setMaxResults(1);
+		try {
+			return $this->findEntity($qb);
+		} catch (DoesNotExistException) {
+			return null;
+		}
 	}
 
 	public function deleteOlderThan(int $cutoffTs): int

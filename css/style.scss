@@ -1,29 +1,34 @@
 /*
- * NC Litter — butler visual system.
+ * NC Litter — cat-valet visual system.
  *
  * Product chrome inherits Nextcloud light/dark for readability, but the app
- * owns a charcoal / brass / cream accent language so it never reads as a
+ * owns a charcoal / tabby-amber / cream accent language so it never reads as a
  * generic admin panel or a copy of another NC app.
  *
  * Layout target: desktop + 390px phones (control pad stays tappable).
  */
 
 :root {
-	--nc-app-accent: #c4a574;
-	--nc-app-accent-soft: rgba(196, 165, 116, 0.18);
-	--nc-litter-brass: #c4a574;
-	--nc-litter-brass-bright: #e0c896;
+	/* Tabby amber / ginger — the app's accent identity. */
+	--nc-app-accent: #d8a45e;
+	--nc-app-accent-soft: rgba(216, 164, 94, 0.18);
+	--nc-litter-tabby: #d8a45e;
+	--nc-litter-tabby-bright: #eec78f;
+	--nc-litter-tabby-rgb: 216, 164, 94;
 	--nc-litter-charcoal: #1a1a1c;
 	--nc-litter-charcoal-soft: #2a2a2e;
 	--nc-litter-cream: #f2e8d5;
 	--nc-litter-cream-muted: rgba(242, 232, 213, 0.72);
 	--nc-litter-radius: var(--border-radius-large, 12px);
-	--nc-litter-stage-run: rgba(196, 165, 116, 0.22);
-	--nc-litter-stage-pause: rgba(255, 152, 0, 0.2);
-	--nc-litter-stage-dock: rgba(100, 149, 237, 0.2);
-	--nc-litter-stage-fault: rgba(244, 67, 54, 0.22);
 
-	/* ── Design tokens (v0.7 revamp) ─────────────────────────────────────
+	/* Stage mood washes, one per normalized status tone. */
+	--nc-litter-stage-run: rgba(216, 164, 94, 0.24);
+	--nc-litter-stage-evac: rgba(100, 149, 237, 0.22);
+	--nc-litter-stage-warn: rgba(255, 152, 0, 0.2);
+	--nc-litter-stage-sleep: rgba(120, 130, 180, 0.14);
+	--nc-litter-stage-danger: rgba(244, 67, 54, 0.22);
+
+	/* ── Design tokens ───────────────────────────────────────────────────
 	 * Systematic scales so surfaces feel layered and consistent instead of
 	 * flat color-mix tints with ad-hoc magic numbers.
 	 */
@@ -46,17 +51,18 @@
 	--nc-litter-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
 	--nc-litter-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);
 	--nc-litter-shadow-lg: 0 6px 18px rgba(0, 0, 0, 0.14), 0 12px 32px rgba(0, 0, 0, 0.12);
-	/* Brass accent glow — for active/cleaning emphasis and the mission stage. */
-	--nc-litter-shadow-glow: 0 0 0 1px rgba(196, 165, 116, 0.25), 0 4px 20px rgba(196, 165, 116, 0.18);
+	/* Tabby accent glow — for active/cycling emphasis and the cycle stage. */
+	--nc-litter-shadow-glow: 0 0 0 1px rgba(216, 164, 94, 0.25), 0 4px 20px rgba(216, 164, 94, 0.18);
 	/* Hairline top highlight so cards read as raised, not painted-on. */
 	--nc-litter-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
 	/* State colours — promoted from hardcoded hex so light theme holds up. */
-	--nc-litter-state-run: var(--nc-litter-brass-bright);
-	--nc-litter-state-pause: #ffb74d;
-	--nc-litter-state-dock: #90caf9;
-	--nc-litter-state-fault: #ef9a9a;
-	/* Translucent surface for dark-on-dark insets (was hardcoded rgba(0,0,0,.28)). */
+	--nc-litter-state-run: var(--nc-litter-tabby-bright);
+	--nc-litter-state-warn: #ffb74d;
+	--nc-litter-state-evac: #90caf9;
+	--nc-litter-state-sleep: #b0b6d8;
+	--nc-litter-state-danger: #ef9a9a;
+	/* Translucent surface for dark-on-dark insets. */
 	--nc-litter-inset: color-mix(in srgb, var(--color-main-background) 55%, transparent);
 
 	/* Motion — a small easing + duration vocabulary. */
@@ -76,7 +82,7 @@
 
 .nc-litter-app-shell {
 	background:
-		radial-gradient(1200px 420px at 12% -10%, rgba(196, 165, 116, 0.08), transparent 55%),
+		radial-gradient(1200px 420px at 12% -10%, rgba(216, 164, 94, 0.08), transparent 55%),
 		var(--color-main-background);
 	color: var(--color-main-text);
 	display: flex;
@@ -91,7 +97,7 @@
 	&.is-cleaning {
 		background:
 			radial-gradient(900px 480px at 70% 0%, var(--nc-litter-stage-run), transparent 60%),
-			radial-gradient(700px 360px at 10% 100%, rgba(196, 165, 116, 0.1), transparent 50%),
+			radial-gradient(700px 360px at 10% 100%, rgba(216, 164, 94, 0.1), transparent 50%),
 			var(--color-main-background);
 	}
 }
@@ -102,7 +108,7 @@
 	align-items: center;
 	backdrop-filter: blur(8px);
 	background: color-mix(in srgb, var(--color-main-background) 88%, var(--nc-litter-charcoal) 12%);
-	border-bottom: 1px solid color-mix(in srgb, var(--nc-litter-brass) 35%, var(--color-border));
+	border-bottom: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 35%, var(--color-border));
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.4rem 0.65rem;
@@ -129,7 +135,7 @@
 
 	&--name {
 		background: var(--nc-litter-charcoal);
-		border-color: color-mix(in srgb, var(--nc-litter-brass) 45%, transparent);
+		border-color: color-mix(in srgb, var(--nc-litter-tabby) 45%, transparent);
 		color: var(--nc-litter-cream);
 		font-weight: 650;
 		letter-spacing: 0.01em;
@@ -142,20 +148,36 @@
 		font: inherit;
 	}
 
-	&.ok {
+	&.ok,
+	&.is-ok {
 		background: var(--nc-app-accent-soft);
-		border-color: color-mix(in srgb, var(--nc-litter-brass) 40%, transparent);
-		color: color-mix(in srgb, var(--nc-litter-brass) 70%, var(--color-main-text));
+		border-color: color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
+		color: color-mix(in srgb, var(--nc-litter-tabby) 70%, var(--color-main-text));
 	}
 
-	&.warn {
+	&.warn,
+	&.is-warn {
 		background: rgba(255, 152, 0, 0.18);
 		color: var(--color-warning-text, var(--color-main-text));
 	}
 
-	&.danger {
+	&.danger,
+	&.is-danger {
 		background: rgba(244, 67, 54, 0.18);
 		color: var(--color-error-text, var(--color-main-text));
+	}
+
+	&.is-run {
+		background: rgba(216, 164, 94, 0.24);
+		color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text));
+	}
+
+	&.is-evac {
+		background: color-mix(in srgb, var(--nc-litter-state-evac) 22%, transparent);
+	}
+
+	&.is-sleep {
+		background: color-mix(in srgb, var(--nc-litter-state-sleep) 26%, transparent);
 	}
 }
 
@@ -226,7 +248,7 @@
 
 .nc-litter-panel {
 	background: color-mix(in srgb, var(--color-main-background) 92%, var(--nc-litter-charcoal) 8%);
-	border: 1px solid color-mix(in srgb, var(--nc-litter-brass) 22%, var(--color-border));
+	border: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 22%, var(--color-border));
 	border-radius: var(--r-lg);
 	margin: var(--sp-3) 0;
 	padding: 0.9rem 1rem;
@@ -247,29 +269,17 @@
 	margin: 0.75rem 0 0.25rem;
 }
 
-/* ─── Dashboard split ────────────────────────────────────────────────── */
+/* ─── Dense dashboard grid ───────────────────────────────────────────────
+ * Mobile = single column (source order). On wider screens a 12-column grid
+ * fills the width: hero + controls on the top row, then the big stage beside a
+ * health rail, so a wide monitor isn't mostly empty margin.
+ */
 
 .nc-litter-dashboard {
 	display: grid;
 	gap: 0.75rem;
 }
 
-.nc-litter-dashboard__split {
-	display: grid;
-	gap: 0.85rem;
-	grid-template-columns: minmax(0, 1fr);
-
-	@media (min-width: 840px) {
-		align-items: start;
-		grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-	}
-}
-
-/* ─── Dense dashboard grid ───────────────────────────────────────────────
- * Mobile = single column (source order). On wider screens a 12-column grid
- * fills the width: hero + controls on the top row, then the big stage beside a
- * timeline/lifetime rail, so a wide monitor isn't mostly empty margin.
- */
 .nc-litter-dashboard--grid {
 	align-items: start;
 
@@ -282,20 +292,11 @@
 		.nc-litter-dashboard__hero { grid-column: 1 / 9; }
 		.nc-litter-dashboard__controls { grid-column: 9 / 13; }
 		.nc-litter-dashboard__stage { grid-column: 1 / 9; }
-		.nc-litter-dashboard__timeline { grid-column: 9 / 13; }
+		.nc-litter-dashboard__trend { grid-column: 9 / 13; }
 		.nc-litter-dashboard__lifetime { grid-column: 9 / 13; }
+		.nc-litter-dashboard__timeline { grid-column: 1 / 9; }
 		.nc-litter-dashboard__wide { grid-column: 1 / -1; }
 	}
-}
-
-.nc-litter-dashboard__zone {
-	display: grid;
-	gap: 0.75rem;
-}
-
-.nc-litter-dashboard__zone {
-	display: grid;
-	gap: 0.75rem;
 }
 
 /* ─── Zone A: at-a-glance hero ───────────────────────────────────────── */
@@ -341,10 +342,12 @@
 		padding: 0.2rem 0.65rem;
 		text-transform: uppercase;
 
-		&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-brass) 75%, var(--color-main-text)); }
-		&.is-run { background: rgba(196, 165, 116, 0.22); color: color-mix(in srgb, var(--nc-litter-brass) 80%, var(--color-main-text)); }
-		&.is-dock { background: color-mix(in srgb, var(--nc-litter-state-dock) 20%, transparent); color: var(--color-main-text); }
-		&.is-warn { background: color-mix(in srgb, var(--nc-litter-state-pause) 22%, transparent); color: var(--color-warning-text, var(--color-main-text)); }
+		&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text)); }
+		&.is-run { background: rgba(216, 164, 94, 0.24); color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text)); }
+		&.is-evac { background: color-mix(in srgb, var(--nc-litter-state-evac) 22%, transparent); color: var(--color-main-text); }
+		&.is-warn { background: color-mix(in srgb, var(--nc-litter-state-warn) 24%, transparent); color: var(--color-warning-text, var(--color-main-text)); }
+		&.is-sleep { background: color-mix(in srgb, var(--nc-litter-state-sleep) 26%, transparent); color: var(--color-main-text); }
+		&.is-danger { background: rgba(244, 67, 54, 0.2); color: var(--color-error-text, var(--color-main-text)); }
 		&.is-idle { background: var(--color-background-dark); color: var(--color-text-maxcontrast); }
 	}
 
@@ -356,34 +359,42 @@
 		width: 8px;
 	}
 
-	// The status dot breathes while the robot is actively working.
-	&--run &__dot {
+	// The status dot breathes while a cycle is actually running.
+	&--run &__dot,
+	&--evac &__dot {
 		animation: nc-litter-dot-pulse 1.6s var(--nc-litter-ease-out) infinite;
 	}
 
 	&__facts {
 		display: grid;
 		gap: 0.5rem;
-		grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 		margin: 0;
-		min-width: min(100%, 320px);
+		min-width: min(100%, 340px);
 	}
 
 	&__fact {
 		background: var(--color-background-hover);
 		border-radius: var(--r-sm);
 		min-width: 0;
+		// Contain long values inside the tile rather than letting them bleed.
+		overflow: hidden;
 		padding: 0.35rem 0.55rem;
 
 		dt {
 			color: var(--color-text-maxcontrast);
 			font-size: 0.72rem;
+			overflow-wrap: anywhere;
 		}
 
 		dd {
+			// Fluid so long values scale down inside the fixed box instead of
+			// overflowing or clipping.
+			font-size: clamp(0.85rem, 2.4vw, 1rem);
 			font-weight: 650;
 			margin: 0;
 			overflow-wrap: anywhere;
+			word-break: break-word;
 
 			&.warn { color: var(--color-warning-text, var(--color-main-text)); }
 			&.danger { color: var(--color-error-text, var(--color-main-text)); }
@@ -394,9 +405,31 @@
 			display: flex;
 			gap: 0.5rem;
 		}
+
+		&--chips dd {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 0.25rem;
+		}
 	}
 
 	&__gaugetext { min-width: 0; }
+}
+
+.nc-litter-modechip {
+	background: var(--color-background-dark);
+	border: 1px solid transparent;
+	border-radius: var(--r-pill);
+	font-size: 0.72rem;
+	font-weight: 600;
+	padding: 0.1rem 0.5rem;
+	white-space: nowrap;
+
+	&.is-on {
+		background: var(--nc-app-accent-soft);
+		border-color: color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
+		color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text));
+	}
 }
 
 @keyframes nc-litter-dot-pulse {
@@ -404,7 +437,7 @@
 	50% { opacity: 0.55; transform: scale(0.82); }
 }
 
-/* ─── Gauges: battery ring, Wi-Fi bars, bin glyph ────────────────────── */
+/* ─── Gauges: level rings + Wi-Fi bars ───────────────────────────────── */
 
 .nc-litter-ring {
 	flex: none;
@@ -419,7 +452,7 @@
 
 	&__value {
 		fill: none;
-		stroke: var(--nc-litter-brass);
+		stroke: var(--nc-litter-tabby);
 		stroke-linecap: round;
 		stroke-width: 3.5;
 		transition: stroke-dashoffset var(--nc-litter-dur-med) var(--nc-litter-ease);
@@ -431,12 +464,12 @@
 		font-weight: 700;
 	}
 
-	&.is-ok &__value { stroke: var(--nc-litter-brass); }
-	&.is-charge &__value { stroke: var(--nc-litter-state-dock); }
-	&.is-charge &__pct { fill: var(--nc-litter-state-dock); }
-	&.is-warn &__value { stroke: var(--nc-litter-state-pause); }
-	&.is-danger &__value { stroke: var(--nc-litter-state-fault); }
-	&.is-danger &__pct { fill: var(--nc-litter-state-fault); }
+	&.is-ok &__value { stroke: var(--nc-litter-tabby); }
+	&.is-idle &__value { stroke: color-mix(in srgb, var(--color-main-text) 30%, transparent); }
+	&.is-warn &__value { stroke: var(--nc-litter-state-warn); }
+	&.is-warn &__pct { fill: var(--color-warning-text, var(--color-main-text)); }
+	&.is-danger &__value { stroke: var(--nc-litter-state-danger); }
+	&.is-danger &__pct { fill: var(--nc-litter-state-danger); }
 }
 
 .nc-litter-bars {
@@ -458,37 +491,14 @@
 		&:nth-child(3) { height: 78%; }
 		&:nth-child(4) { height: 100%; }
 
-		&.on { background: var(--nc-litter-brass); }
+		&.on { background: var(--nc-litter-tabby); }
 	}
 
-	&.warn i.on { background: var(--nc-litter-state-pause); }
-	&.danger i.on { background: var(--nc-litter-state-fault); }
+	&.warn i.on { background: var(--nc-litter-state-warn); }
+	&.danger i.on { background: var(--nc-litter-state-danger); }
 }
 
-.nc-litter-bin {
-	align-items: flex-end;
-	border: 2px solid color-mix(in srgb, var(--color-main-text) 40%, transparent);
-	border-radius: 2px 2px 3px 3px;
-	display: inline-flex;
-	flex: none;
-	height: 22px;
-	overflow: hidden;
-	width: 18px;
-
-	&__fill {
-		background: var(--nc-litter-brass);
-		display: block;
-		width: 100%;
-
-		&.is-ok { height: 35%; background: color-mix(in srgb, var(--nc-litter-brass) 70%, transparent); }
-		&.is-full { height: 100%; background: var(--nc-litter-state-pause); }
-		&.is-missing { height: 0; }
-	}
-
-	&.danger { border-style: dashed; border-color: var(--nc-litter-state-fault); }
-}
-
-/* ─── Success-rate donut (LifetimeStats) ─────────────────────────────── */
+/* ─── Fault-free donut (LifetimeStats) ───────────────────────────────── */
 
 .nc-litter-donut-row {
 	align-items: center;
@@ -512,7 +522,7 @@
 
 	&__value {
 		fill: none;
-		stroke: var(--nc-litter-brass);
+		stroke: var(--nc-litter-tabby);
 		stroke-linecap: round;
 		stroke-width: 5;
 		transition: stroke-dashoffset var(--nc-litter-dur-med) var(--nc-litter-ease);
@@ -522,6 +532,43 @@
 		fill: var(--color-main-text);
 		font-size: 11px;
 		font-weight: 700;
+	}
+}
+
+/* ─── Drawer-fill trend sparkline ────────────────────────────────────── */
+
+.nc-litter-trend {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+
+	&__svg {
+		background: var(--color-background-dark);
+		border-radius: var(--r-sm);
+		display: block;
+		height: 64px;
+		width: 100%;
+	}
+
+	&__line {
+		fill: none;
+		stroke: var(--nc-litter-tabby);
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		stroke-width: 1.6;
+		vector-effect: non-scaling-stroke;
+	}
+
+	&__guide {
+		stroke: var(--nc-litter-state-warn);
+		stroke-dasharray: 3 3;
+		stroke-opacity: 0.6;
+		stroke-width: 1;
+		vector-effect: non-scaling-stroke;
+	}
+
+	&__head {
+		fill: var(--nc-litter-tabby-bright);
 	}
 }
 
@@ -547,17 +594,21 @@
 	}
 }
 
-/* ─── Mission stage (live theater) ───────────────────────────────────── */
+/* ─── Cycle stage (live theater) ─────────────────────────────────────────
+ * The centrepiece: a stylised litter unit whose globe turns while a cycle
+ * runs. Mood is driven by the normalized status, so the tint always reflects
+ * something the unit actually reported.
+ */
 
 .nc-litter-stage {
-	--stage-ring: var(--nc-litter-brass);
-	--stage-glow: var(--nc-litter-stage-run);
+	--stage-ring: var(--nc-litter-tabby);
+	--stage-glow: rgba(216, 164, 94, 0.12);
 	background:
 		radial-gradient(ellipse 80% 70% at 50% 45%, var(--stage-glow), transparent 70%),
 		linear-gradient(165deg, var(--nc-litter-charcoal) 0%, var(--nc-litter-charcoal-soft) 100%);
-	border: 1px solid color-mix(in srgb, var(--nc-litter-brass) 40%, transparent);
+	border: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
 	border-radius: var(--r-lg);
-	// Elevation so the theater sits above the page; run state adds a brass glow.
+	// Elevation so the theater sits above the page; a live cycle adds a glow.
 	box-shadow: var(--nc-litter-shadow-md);
 	color: var(--nc-litter-cream);
 	margin: 0;
@@ -566,29 +617,37 @@
 	position: relative;
 	transition: box-shadow var(--nc-litter-dur-med) var(--nc-litter-ease);
 
+	&--ok,
 	&--idle {
-		--stage-glow: rgba(196, 165, 116, 0.1);
+		--stage-glow: rgba(216, 164, 94, 0.1);
 	}
 
 	&--run {
-		--stage-ring: var(--nc-litter-brass-bright);
+		--stage-ring: var(--nc-litter-tabby-bright);
 		--stage-glow: var(--nc-litter-stage-run);
 		box-shadow: var(--nc-litter-shadow-md), var(--nc-litter-shadow-glow);
 	}
 
-	&--pause {
-		--stage-ring: var(--nc-litter-state-pause);
-		--stage-glow: var(--nc-litter-stage-pause);
+	&--evac {
+		--stage-ring: var(--nc-litter-state-evac);
+		--stage-glow: var(--nc-litter-stage-evac);
 	}
 
-	&--dock {
-		--stage-ring: var(--nc-litter-state-dock);
-		--stage-glow: var(--nc-litter-stage-dock);
+	&--warn {
+		--stage-ring: var(--nc-litter-state-warn);
+		--stage-glow: var(--nc-litter-stage-warn);
 	}
 
-	&--fault {
-		--stage-ring: var(--nc-litter-state-fault);
-		--stage-glow: var(--nc-litter-stage-fault);
+	&--sleep {
+		--stage-ring: var(--nc-litter-state-sleep);
+		--stage-glow: var(--nc-litter-stage-sleep);
+		// Resting: dim the whole theater rather than animating anything.
+		filter: saturate(0.7) brightness(0.85);
+	}
+
+	&--danger {
+		--stage-ring: var(--nc-litter-state-danger);
+		--stage-glow: var(--nc-litter-stage-danger);
 	}
 
 	&__header {
@@ -607,18 +666,10 @@
 		margin: 0;
 	}
 
-	&__phase {
+	&__status {
 		color: var(--nc-litter-cream-muted);
 		font-size: 0.85rem;
 		margin: 0;
-	}
-
-	&__hint {
-		color: var(--color-warning-text, var(--nc-litter-cream-muted));
-		flex-basis: 100%;
-		font-size: 0.8rem;
-		margin: 0.15rem 0 0;
-		opacity: 0.9;
 	}
 
 	&__canvas {
@@ -648,56 +699,92 @@
 		width: 100%;
 	}
 
-	&__ring {
-		fill: none;
+	/* ── Unit glyph ─────────────────────────────────────────────────── */
+
+	&__base {
+		fill: color-mix(in srgb, var(--nc-litter-charcoal) 70%, #000);
 		stroke: var(--stage-ring);
-		stroke-linecap: round;
-		stroke-width: 3.2;
-		transform-origin: 50% 50%;
-	}
-
-	&__ring--sweep {
-		stroke-dasharray: 40 180;
-		stroke-opacity: 0.95;
-	}
-
-	&--run &__ring--sweep {
-		animation: nc-litter-sweep 2.4s linear infinite;
-	}
-
-	&--pause &__ring--sweep {
-		animation: nc-litter-sweep 6s linear infinite;
 		stroke-opacity: 0.55;
+		stroke-width: 1.4;
 	}
 
-	&--dock &__ring--sweep {
-		animation: nc-litter-sweep 3.2s ease-in-out infinite;
+	// Waste-drawer fill bar; its height is bound to the live drawer percentage.
+	&__drawer-fill {
+		fill: var(--stage-ring);
+		fill-opacity: 0.6;
+		transition: height var(--nc-litter-dur-med) var(--nc-litter-ease),
+			y var(--nc-litter-dur-med) var(--nc-litter-ease);
 	}
 
-	&__body {
-		fill: #f2e8d5;
+	&__globe-body {
+		fill: var(--nc-litter-cream);
+		fill-opacity: 0.94;
 	}
 
-	&__home {
-		fill: #1a1a1c;
+	&__globe-rim {
+		fill: none;
+		stroke: var(--stage-ring);
+		stroke-width: 3.2;
 	}
 
-	&__bumper {
+	&__sift {
+		fill: none;
+		stroke: color-mix(in srgb, var(--nc-litter-charcoal) 55%, transparent);
+		stroke-linecap: round;
+		stroke-opacity: 0.5;
+		stroke-width: 2;
+	}
+
+	&__clump {
+		fill: color-mix(in srgb, var(--nc-litter-charcoal) 70%, transparent);
+		fill-opacity: 0.55;
+	}
+
+	&__opening {
 		fill: none;
 		stroke: var(--stage-ring);
 		stroke-linecap: round;
-		stroke-width: 2.5;
+		stroke-width: 2.6;
+	}
+
+	&__nightlight {
+		fill: none;
+		stroke: var(--nc-litter-tabby-bright);
+		stroke-linecap: round;
+		stroke-width: 2.4;
+		filter: drop-shadow(0 0 4px rgba(238, 199, 143, 0.7));
+	}
+
+	&__moon {
+		fill: var(--nc-litter-state-sleep);
+		fill-opacity: 0.85;
 	}
 
 	&__pulse {
 		fill: none;
 		stroke: var(--stage-ring);
-		stroke-opacity: 0.35;
+		stroke-opacity: 0.3;
 		stroke-width: 1.5;
-		transform-origin: 50% 50%;
+		transform-origin: 50% 46%;
 	}
 
-	&--run &__pulse {
+	// The globe spins only while the unit is genuinely mid-cycle.
+	&__globe {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
+
+	&--run &__globe {
+		animation: nc-litter-globe-spin 3.2s linear infinite;
+	}
+
+	// An empty cycle tips the globe right over: slower, heavier motion.
+	&--evac &__globe {
+		animation: nc-litter-globe-spin 5s ease-in-out infinite;
+	}
+
+	&--run &__pulse,
+	&--evac &__pulse {
 		animation: nc-litter-pulse 2s ease-out infinite;
 	}
 
@@ -710,7 +797,7 @@
 
 	&__metric {
 		background: rgba(0, 0, 0, 0.28);
-		border: 1px solid rgba(196, 165, 116, 0.22);
+		border: 1px solid rgba(216, 164, 94, 0.22);
 		border-radius: var(--r-md);
 		min-width: 0;
 		// Contain any residual overflow inside the rounded box rather than letting
@@ -729,9 +816,9 @@
 		}
 
 		dd {
-			// Fluid: long values (now "…est.") scale down inside the fixed box
-			// instead of overflowing/clipping.
-			font-size: clamp(0.95rem, 3.2vw, 1.25rem);
+			// Fluid: long values scale down inside the fixed box instead of
+			// overflowing / clipping.
+			font-size: clamp(0.9rem, 2.8vw, 1.2rem);
 			font-variant-numeric: tabular-nums;
 			font-weight: 650;
 			line-height: 1.15;
@@ -741,14 +828,6 @@
 		}
 	}
 
-	&__mini-map {
-		border: 1px solid rgba(196, 165, 116, 0.28);
-		border-radius: var(--r-md);
-		grid-column: 1 / -1;
-		margin-top: 0.15rem;
-		overflow: hidden;
-	}
-
 	&__hint {
 		color: var(--nc-litter-cream-muted);
 		font-size: 0.8rem;
@@ -756,7 +835,7 @@
 	}
 }
 
-@keyframes nc-litter-sweep {
+@keyframes nc-litter-globe-spin {
 	to {
 		transform: rotate(360deg);
 	}
@@ -773,21 +852,11 @@
 	}
 }
 
-@keyframes nc-litter-trail-draw {
-	from {
-		stroke-dashoffset: 400;
-	}
-	to {
-		stroke-dashoffset: 0;
-	}
-}
-
 @media (prefers-reduced-motion: reduce) {
-	.nc-litter-stage__ring--sweep,
+	.nc-litter-stage__globe,
 	.nc-litter-stage__pulse,
-	.nc-litter-map__robot-g,
-	.nc-litter-map__trail,
-	.nc-litter-hero--run .nc-litter-hero__dot {
+	.nc-litter-hero--run .nc-litter-hero__dot,
+	.nc-litter-hero--evac .nc-litter-hero__dot {
 		animation: none !important;
 	}
 }
@@ -797,7 +866,9 @@
 .nc-litter-control-pad {
 	display: grid;
 	gap: var(--sp-2);
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	// Six LR4 commands; auto-fit keeps them tappable in the narrow dashboard
+	// rail as well as full width on a phone.
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 	margin: 0;
 
 	button {
@@ -806,17 +877,44 @@
 	}
 }
 
+/* Wait-time picker: a value, not a command, so it gets its own row. */
+.nc-litter-waitpick {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: var(--sp-3);
+
+	&__label {
+		align-items: center;
+		color: var(--color-text-maxcontrast);
+		display: inline-flex;
+		font-size: 0.8rem;
+		gap: 0.35rem;
+	}
+
+	&__select {
+		background: var(--color-main-background);
+		border: 1px solid var(--color-border);
+		border-radius: var(--r-sm);
+		color: var(--color-main-text);
+		min-height: 40px;
+		padding: 0 0.5rem;
+	}
+}
+
 /* Consistent keyboard focus ring across the app's own interactive surfaces
  * (NcButton has its own; these are our custom rows/tiles/buttons). */
 .nc-litter-history__row:focus-visible,
 .nc-litter-achv__item:focus-visible,
 .nc-litter-chip--button:focus-visible,
+.nc-litter-waitpick__select:focus-visible,
 .nc-litter-list button:focus-visible {
-	outline: 2px solid var(--nc-litter-brass);
+	outline: 2px solid var(--nc-litter-tabby);
 	outline-offset: 2px;
 }
 
-/* ─── Mission timeline ───────────────────────────────────────────────── */
+/* ─── Cycle timeline ─────────────────────────────────────────────────── */
 
 .nc-litter-timeline {
 	border-radius: var(--r-sm);
@@ -838,25 +936,34 @@
 	overflow: hidden;
 	padding: 0.4rem 0.35rem;
 
-	&.is-active {
+	&.is-ok {
 		background: var(--nc-app-accent-soft);
-		color: color-mix(in srgb, var(--nc-litter-brass) 55%, var(--color-main-text));
+		color: color-mix(in srgb, var(--nc-litter-tabby) 55%, var(--color-main-text));
 	}
 
-	&.is-paused {
-		background: rgba(255, 152, 0, 0.18);
+	&.is-run {
+		background: rgba(216, 164, 94, 0.26);
+		color: color-mix(in srgb, var(--nc-litter-tabby) 70%, var(--color-main-text));
 	}
 
-	&.is-returning {
+	&.is-evac {
 		background: rgba(33, 150, 243, 0.18);
 	}
 
-	&.is-stopped {
-		background: rgba(158, 158, 158, 0.22);
+	&.is-warn {
+		background: rgba(255, 152, 0, 0.18);
 	}
 
-	&.is-fault {
+	&.is-sleep {
+		background: rgba(120, 130, 180, 0.2);
+	}
+
+	&.is-danger {
 		background: rgba(244, 67, 54, 0.22);
+	}
+
+	&.is-idle {
+		background: rgba(158, 158, 158, 0.22);
 	}
 }
 
@@ -868,31 +975,35 @@
 	color: var(--color-text-maxcontrast);
 }
 
-/* ─── Schedule week grid ─────────────────────────────────────────────── */
+/* ─── Sleep window editor ────────────────────────────────────────────── */
 
-.nc-litter-week-grid {
-	display: grid;
-	gap: 0.45rem;
-	grid-template-columns: repeat(7, minmax(0, 1fr));
-}
-
-.nc-litter-week-grid__day {
-	border: 1px solid var(--color-border);
-	border-radius: var(--r-sm);
+.nc-litter-timepair {
+	align-items: flex-end;
 	display: flex;
-	flex-direction: column;
-	gap: 0.35rem;
-	font-size: 0.8rem;
-	padding: 0.45rem;
-}
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin: 0.5rem 0 0;
 
-.nc-litter-week-grid__time {
-	background: var(--color-main-background);
-	border: 1px solid var(--color-border);
-	border-radius: var(--r-sm);
-	color: var(--color-main-text);
-	min-height: 36px;
-	width: 100%;
+	label {
+		color: var(--color-text-maxcontrast);
+		display: flex;
+		flex-direction: column;
+		font-size: 0.8rem;
+		gap: 0.25rem;
+	}
+
+	&__time {
+		background: var(--color-main-background);
+		border: 1px solid var(--color-border);
+		border-radius: var(--r-sm);
+		color: var(--color-main-text);
+		min-height: 40px;
+	}
+
+	.nc-litter-muted {
+		flex-basis: 100%;
+		margin: 0;
+	}
 }
 
 /* ─── Maintenance hints ──────────────────────────────────────────────── */
@@ -936,11 +1047,18 @@
 	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
 	margin: 0.5rem 0;
 
-	// Identity card (model / firmware): brass-tinted so it reads as "about this
-	// robot" rather than another wear counter.
+	// Identity card (model / Whisker id): accent-tinted so it reads as "about
+	// this unit" rather than another counter.
 	&--identity .nc-litter-stats__item {
 		background: var(--nc-app-accent-soft, var(--color-background-hover));
-		border: 1px solid color-mix(in srgb, var(--nc-litter-brass) 30%, transparent);
+		border: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 30%, transparent);
+	}
+
+	// Compact variant for the trend card's three summary cells.
+	&--tight {
+		gap: 0.35rem;
+		grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+		margin: 0;
 	}
 }
 
@@ -950,6 +1068,7 @@
 	// min-width:0 lets the grid cell shrink so long values wrap instead of
 	// forcing the box wider than its column / clipping.
 	min-width: 0;
+	overflow: hidden;
 	padding: 0.4rem 0.6rem;
 
 	dt {
@@ -959,13 +1078,18 @@
 	}
 
 	dd {
+		font-size: clamp(0.85rem, 2.2vw, 1rem);
 		font-weight: 600;
 		margin: 0;
 		overflow-wrap: anywhere;
+		word-break: break-word;
+
+		&.warn { color: var(--color-warning-text, var(--color-main-text)); }
+		&.danger { color: var(--color-error-text, var(--color-main-text)); }
 	}
 }
 
-/* ─── History list ──────────────────────────────────────────────────── */
+/* ─── Selectable lists (onboarding units, etc.) ──────────────────────── */
 
 .nc-litter-list {
 	display: flex;
@@ -1009,110 +1133,50 @@
 }
 
 .nc-litter-admin-pointer {
-	border-left: 3px solid color-mix(in srgb, var(--nc-litter-brass) 40%, transparent);
+	border-left: 3px solid color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
 	padding-left: 0.6rem;
 }
 
-/* ─── Location map ───────────────────────────────────────────────────── */
+/* ─── Alfred card ────────────────────────────────────────────────────── */
 
-.nc-litter-map {
-	background:
-		radial-gradient(circle at 50% 50%, rgba(196, 165, 116, 0.08), transparent 55%),
-		color-mix(in srgb, var(--color-background-dark) 70%, var(--nc-litter-charcoal) 30%);
-	background-position: center;
-	background-size: cover;
-	border: 1px solid color-mix(in srgb, var(--nc-litter-brass) 30%, var(--color-border));
-	border-radius: var(--nc-litter-radius);
-	overflow: hidden;
-	position: relative;
-}
+.nc-litter-alfred {
+	&__open {
+		color: var(--nc-app-accent);
+		font-size: 0.85rem;
+	}
 
-.nc-litter-map__svg {
-	aspect-ratio: 1 / 1;
-	display: block;
-	width: 100%;
-}
+	&__cmds {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem 0.75rem;
+		list-style: none;
+		margin: 0.25rem 0;
+		padding: 0;
+	}
 
-.nc-litter-map__axis {
-	stroke: rgba(242, 232, 213, 0.18);
-	stroke-dasharray: 8 10;
-	stroke-width: 2;
-}
+	&__alerts ul {
+		list-style: none;
+		margin: 0.25rem 0 0;
+		padding: 0;
+	}
 
-.nc-litter-map__dock {
-	fill: none;
-	stroke: var(--nc-litter-brass);
-	stroke-opacity: 0.75;
-	stroke-width: 3;
-}
+	&__alerts li {
+		display: flex;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+	}
 
-.nc-litter-map__dock-label {
-	fill: var(--nc-litter-cream-muted);
-	font-size: 28px;
-}
-
-.nc-litter-map__trail {
-	fill: none;
-	stroke: var(--nc-litter-brass-bright);
-	stroke-linecap: round;
-	stroke-linejoin: round;
-	stroke-opacity: 0.85;
-	// Crisp path line over the swept footprint. Width is in cm (map units);
-	// non-scaling keeps it readable as the auto-fit viewBox zooms.
-	stroke-width: 6;
-	vector-effect: non-scaling-stroke;
-}
-
-// Swept-area footprint: one translucent brass square per covered 25 cm cell.
-// Inline opacity encodes dwell (bright = revisited most — often walls/edges).
-.nc-litter-map__cell {
-	fill: var(--nc-litter-brass);
-	stroke: none;
-}
-
-.nc-litter-map__robot {
-	fill: var(--nc-litter-cream);
-	stroke: var(--nc-litter-brass);
-	stroke-width: 3;
-	filter: drop-shadow(0 0 8px rgba(196, 165, 116, 0.45));
-}
-
-.nc-litter-map__heading {
-	fill: var(--nc-litter-charcoal);
-}
-
-.nc-litter-map__cone {
-	fill: rgba(196, 165, 116, 0.28);
-}
-
-.nc-litter-map__robot-g {
-	transition: transform 0.45s cubic-bezier(0.22, 0.8, 0.3, 1);
-}
-
-.nc-litter-map-fallback {
-	align-items: stretch;
-	border: 1px solid color-mix(in srgb, var(--nc-litter-brass) 28%, var(--color-border));
-	border-radius: var(--nc-litter-radius);
-	color: var(--color-text-maxcontrast);
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-	justify-content: center;
-	min-height: 260px;
-	overflow: hidden;
-	padding: 0;
-}
-
-.nc-litter-map-fallback__body {
-	padding: 0 1rem 1rem;
-	text-align: center;
+	&__when {
+		color: var(--color-text-maxcontrast);
+		flex: none;
+	}
 }
 
 /* ─── Connection health drawer ───────────────────────────────────────── */
 
 .nc-litter-drawer {
 	background: var(--color-main-background);
-	border-left: 1px solid color-mix(in srgb, var(--nc-litter-brass) 30%, var(--color-border));
+	border-left: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 30%, var(--color-border));
 	box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
 	height: 100%;
 	overflow: auto;
@@ -1182,43 +1246,17 @@
 	}
 }
 
-.nc-litter-candidates {
-	display: flex;
-	flex-direction: column;
-	gap: 0.35rem;
-	list-style: none;
-	margin: 0.5rem 0;
-	padding: 0;
-
-	button {
-		background: transparent;
-		border: 1px solid var(--color-border);
-		border-radius: 8px;
-		color: inherit;
-		cursor: pointer;
-		padding: 0.45rem 0.65rem;
-		text-align: left;
-		width: 100%;
-
-		&.active,
-		&:hover {
-			border-color: var(--nc-app-accent);
-			background: var(--nc-app-accent-soft);
-		}
-	}
-}
-
-/* ─── Admin Soft-AP setup wizard ─────────────────────────────────────── */
+/* ─── Admin Whisker onboarding ───────────────────────────────────────── */
 
 .nc-litter-wizard {
 	margin: 1rem 0 1.5rem;
 	padding: 1rem 1.1rem 1.15rem;
-	border: 1px solid var(--nc-app-border, rgba(196, 165, 116, 0.35));
+	border: 1px solid var(--nc-app-border, rgba(216, 164, 94, 0.35));
 	border-radius: var(--r-md);
 	background: linear-gradient(
 		165deg,
 		rgba(26, 26, 28, 0.04),
-		rgba(196, 165, 116, 0.08)
+		rgba(216, 164, 94, 0.08)
 	);
 }
 
@@ -1239,7 +1277,7 @@
 }
 
 .nc-litter-wizard__steps li.is-active {
-	color: var(--nc-app-accent, #C4A574);
+	color: var(--nc-app-accent, #d8a45e);
 	font-weight: 600;
 }
 
@@ -1259,29 +1297,17 @@
 	font-size: 0.9rem;
 }
 
+.nc-litter-wizard__pane input {
+	color: var(--color-main-text);
+	min-height: 40px;
+}
+
 .nc-litter-wizard__howto {
 	margin: 0;
 	padding-left: 1.2rem;
 	display: grid;
 	gap: 0.4rem;
 	font-size: 0.9rem;
-}
-
-.nc-litter-wizard__nav {
-	margin-top: 1rem;
-}
-
-.nc-litter-admin__advanced {
-	margin: 1.25rem 0;
-	padding: 0.75rem 0.9rem;
-	border: 1px dashed var(--nc-app-border, rgba(196, 165, 116, 0.4));
-	border-radius: 8px;
-}
-
-.nc-litter-admin__advanced > summary {
-	cursor: pointer;
-	font-weight: 600;
-	margin-bottom: 0.75rem;
 }
 
 /* ─── Narrow phones ──────────────────────────────────────────────────── */
@@ -1292,10 +1318,6 @@
 	}
 
 	.nc-litter-control-pad {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	.nc-litter-week-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
@@ -1344,7 +1366,7 @@
 		width: 100%;
 
 		&:hover {
-			border-color: color-mix(in srgb, var(--nc-litter-brass) 45%, var(--color-border));
+			border-color: color-mix(in srgb, var(--nc-litter-tabby) 45%, var(--color-border));
 			box-shadow: var(--nc-litter-shadow-md);
 			transform: translateY(-1px);
 		}
@@ -1377,9 +1399,10 @@
 	padding: 0.1rem 0.5rem;
 	text-transform: uppercase;
 
-	&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-brass) 75%, var(--color-main-text)); }
+	&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text)); }
+	&.is-warn { background: rgba(255, 152, 0, 0.2); color: var(--color-warning-text, var(--color-main-text)); }
 	&.is-danger { background: rgba(244, 67, 54, 0.18); color: var(--color-error-text, var(--color-main-text)); }
-	&.is-run { background: rgba(196, 165, 116, 0.22); color: color-mix(in srgb, var(--nc-litter-brass) 80%, var(--color-main-text)); }
+	&.is-run { background: rgba(216, 164, 94, 0.24); color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text)); }
 }
 
 .nc-litter-empty {
@@ -1422,8 +1445,8 @@
 			transform: translateY(-1px);
 		}
 
-		&.is-gold { border-color: color-mix(in srgb, var(--nc-litter-brass) 55%, transparent); }
-		&.is-silver { border-color: color-mix(in srgb, var(--color-border) 80%, var(--nc-litter-brass)); }
+		&.is-gold { border-color: color-mix(in srgb, var(--nc-litter-tabby) 55%, transparent); }
+		&.is-silver { border-color: color-mix(in srgb, var(--color-border) 80%, var(--nc-litter-tabby)); }
 		&.is-bronze { border-color: var(--color-border); }
 
 		&.is-locked {
@@ -1442,8 +1465,8 @@
 		line-height: 1;
 		width: 2rem;
 		// A tier-coloured ring around the earned badge glyph.
-		.nc-litter-achv__item.is-gold & { box-shadow: 0 0 0 2px color-mix(in srgb, var(--nc-litter-brass) 60%, transparent); border-radius: var(--r-pill); }
-		.nc-litter-achv__item.is-silver & { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border) 70%, var(--nc-litter-brass)); border-radius: var(--r-pill); }
+		.nc-litter-achv__item.is-gold & { box-shadow: 0 0 0 2px color-mix(in srgb, var(--nc-litter-tabby) 60%, transparent); border-radius: var(--r-pill); }
+		.nc-litter-achv__item.is-silver & { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border) 70%, var(--nc-litter-tabby)); border-radius: var(--r-pill); }
 	}
 
 	&__body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
@@ -1457,7 +1480,7 @@
 	}
 
 	&__new {
-		background: var(--nc-app-accent, var(--nc-litter-brass));
+		background: var(--nc-app-accent, var(--nc-litter-tabby));
 		border-radius: 999px;
 		color: var(--color-primary-text, #1a1a1c);
 		font-size: 0.62rem;
@@ -1484,7 +1507,7 @@
 	}
 
 	&__bar {
-		background: color-mix(in srgb, var(--nc-litter-brass) 55%, transparent);
+		background: color-mix(in srgb, var(--nc-litter-tabby) 55%, transparent);
 		display: block;
 		height: 100%;
 	}

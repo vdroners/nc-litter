@@ -5,22 +5,22 @@ declare(strict_types=1);
 namespace OCA\NcLitter\BackgroundJob;
 
 use OCA\NcLitter\Service\BridgeClient;
-use OCA\NcLitter\Service\MissionService;
-use OCA\NcLitter\Service\RobotService;
+use OCA\NcLitter\Service\CycleService;
+use OCA\NcLitter\Service\DeviceService;
 use OCP\AppFramework\Utility\ITimeFactory;
 use OCP\BackgroundJob\TimedJob;
 use Psr\Log\LoggerInterface;
 
 /**
- * Periodically sample bridge state, append phase events, roll up missions, notify.
+ * Periodically sample bridge state, roll up cycles, append status events, notify.
  */
 class TelemetrySampleJob extends TimedJob
 {
 	public function __construct(
 		ITimeFactory $time,
-		private RobotService $robots,
+		private DeviceService $devices,
 		private BridgeClient $bridge,
-		private MissionService $missions,
+		private CycleService $cycles,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($time);
@@ -29,17 +29,20 @@ class TelemetrySampleJob extends TimedJob
 
 	protected function run($argument): void
 	{
-		foreach ($this->robots->listRobots() as $robot) {
-			$id = (int) $robot->getId();
+		foreach ($this->devices->listDevices() as $device) {
+			$id = (int) $device->getId();
 			try {
 				$resp = $this->bridge->getState($id);
 				if (!$resp['ok'] || !is_array($resp['body'])) {
-					$this->logger->debug('TelemetrySampleJob: bridge state unavailable for robot {id}', ['id' => $id]);
+					$this->logger->debug('TelemetrySampleJob: bridge state unavailable for device {id}', ['id' => $id]);
 					continue;
 				}
-				$this->missions->ingestState($id, $resp['body']);
+				// The bridge wraps the DTO as { ok, state }.
+				$body = $resp['body'];
+				$state = is_array($body['state'] ?? null) ? $body['state'] : $body;
+				$this->cycles->ingestState($id, $state);
 			} catch (\Throwable $e) {
-				$this->logger->warning('TelemetrySampleJob failed for robot {id}: {err}', [
+				$this->logger->warning('TelemetrySampleJob failed for device {id}: {err}', [
 					'id' => $id,
 					'err' => $e->getMessage(),
 				]);

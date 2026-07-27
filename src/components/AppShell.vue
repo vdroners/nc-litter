@@ -4,7 +4,6 @@
 			:state="state"
 			:age-s="ageS"
 			:connected="connected"
-			:conflict="conflict"
 			:stale="stale"
 			@open-drawer="$emit('open-drawer')" />
 
@@ -43,10 +42,12 @@ import { NcNoteCard } from '@nextcloud/vue'
 
 import ConnectionHealthDrawer from './ConnectionHealthDrawer.vue'
 import StatusStrip from './StatusStrip.vue'
+import { statusKey } from '../utils/format.js'
 
+// No Location tab: the LR4 reports no position and no floor map, so there is nothing
+// honest to put on one.
 const TABS = [
 	{ id: 'dashboard', label: 'Dashboard' },
-	{ id: 'location', label: 'Location' },
 	{ id: 'history', label: 'History' },
 	{ id: 'settings', label: 'Settings' },
 ]
@@ -71,10 +72,6 @@ export default {
 		},
 		connected: {
 			type: Boolean,
-			default: false,
-		},
-		conflict: {
-			type: [Boolean, String],
 			default: false,
 		},
 		stale: {
@@ -108,13 +105,10 @@ export default {
 	},
 
 	computed: {
+		/** Warms the whole page while a cycle is genuinely running. */
 		isCleaning() {
-			if (!this.state) {
-				return false
-			}
-			const phase = String(this.state.phase || '')
-			const cycle = String(this.state.cycle || '')
-			return phase === 'run' || cycle === 'clean' || cycle === 'spot'
+			const key = statusKey(this.state)
+			return key === 'cleaning' || key === 'emptying'
 		},
 	},
 }

@@ -17,10 +17,10 @@ class AuditService
 	/**
 	 * @param array<string, mixed> $detail
 	 */
-	public function write(int $robotId, string $uid, string $action, string $result, array $detail = []): CommandAudit
+	public function write(int $deviceId, string $uid, string $action, string $result, array $detail = []): CommandAudit
 	{
 		$row = new CommandAudit();
-		$row->setRobotId($robotId);
+		$row->setDeviceId($deviceId);
 		$row->setUid($uid);
 		$row->setAction($action);
 		$row->setTs(time());
@@ -29,8 +29,8 @@ class AuditService
 		return $this->mapper->insert($row);
 	}
 
-	public function latest(int $robotId): ?CommandAudit
+	public function latest(int $deviceId): ?CommandAudit
 	{
-		return $this->mapper->findLatestForRobot($robotId);
+		return $this->mapper->findLatestForDevice($deviceId);
 	}
 }

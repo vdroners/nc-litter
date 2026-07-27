@@ -10,11 +10,28 @@ use Psr\Log\LoggerInterface;
 
 /**
  * HTTP client to the private nc-litter-bridge (Docker DNS).
+ *
+ * Mirrors bridge/app.py exactly:
+ *   GET  /health                -> {ok,connected,mock,version,error,device_present}
+ *   GET  /state                 -> {ok,state:{DTO}}
+ *   GET  /stream                -> text/event-stream, `event: state` frames
+ *   POST /action/{name}          -> {ok,result,error}
+ *   GET  /settings              -> {ok,settings}
+ *   POST /settings              -> {ok,settings}
+ *   POST /onboard/login         -> {ok,devices:[{id,name,model,serial}]}
+ *   POST /connect               -> {ok,connected,mock,version,error,device_present}
+ *
+ * The bridge process binds exactly one Litter-Robot, so `$deviceId` is advisory:
+ * it is echoed on GET requests to make the app-side device visible in bridge
+ * access logs, and deliberately kept out of POST bodies (FastAPI forwards
+ * unknown action-body keys straight into the pylitterbot call as kwargs).
  */
 class BridgeClient
 {
 	private const CONNECT_TIMEOUT = 5;
 	private const TIMEOUT = 30;
+	/** Whisker cloud login is slower than a local call — give it room. */
+	private const LOGIN_TIMEOUT = 60;
 
 	public function __construct(
 		private IConfig $config,
@@ -39,119 +56,67 @@ class BridgeClient
 	}
 
 	/** @return array{ok:bool,status:int,body:?array,raw:string,error:?string} */
-	public function getState(int $robotId = 1): array
+	public function getState(int $deviceId = 1): array
 	{
-		return $this->request('GET', '/state', ['robot_id' => $robotId]);
+		return $this->request('GET', '/state', ['device_id' => $deviceId]);
 	}
 
 	/**
-	 * @param array<string, mixed> $payload
+	 * @param array<string, mixed> $params extra action arguments (e.g. wait_time)
 	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
 	 */
-	public function action(string $name, int $robotId = 1, array $payload = []): array
+	public function action(string $name, int $deviceId = 1, array $params = []): array
 	{
-		$body = array_merge(['robot_id' => $robotId], $payload);
-		return $this->request('POST', '/action/' . rawurlencode($name), null, $body);
+		return $this->request(
+			'POST',
+			'/action/' . rawurlencode($name),
+			['device_id' => $deviceId],
+			$params,
+		);
 	}
 
 	/** @return array{ok:bool,status:int,body:?array,raw:string,error:?string} */
-	public function getSchedule(int $robotId = 1): array
+	public function getSettings(int $deviceId = 1): array
 	{
-		return $this->request('GET', '/schedule', ['robot_id' => $robotId]);
+		return $this->request('GET', '/settings', ['device_id' => $deviceId]);
 	}
 
 	/**
-	 * @param array<string, mixed> $week
+	 * @param array<string, mixed> $settings patch; only present keys are applied
 	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
 	 */
-	public function setSchedule(array $week, int $robotId = 1): array
+	public function setSettings(array $settings, int $deviceId = 1): array
 	{
-		return $this->request('POST', '/schedule', null, [
-			'robot_id' => $robotId,
-			'week' => $week,
-		]);
-	}
-
-	/** @return array{ok:bool,status:int,body:?array,raw:string,error:?string} */
-	public function getPreferences(int $robotId = 1): array
-	{
-		return $this->request('GET', '/preferences', ['robot_id' => $robotId]);
+		return $this->request('POST', '/settings', ['device_id' => $deviceId], $settings);
 	}
 
 	/**
-	 * @param array<string, mixed> $prefs
-	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
-	 */
-	public function setPreferences(array $prefs, int $robotId = 1): array
-	{
-		return $this->request('POST', '/preferences', null, [
-			'robot_id' => $robotId,
-			'preferences' => $prefs,
-		]);
-	}
-
-	/**
-	 * @param array<string, mixed> $opts
-	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
-	 */
-	public function discover(array $opts = []): array
-	{
-		// Subnet TCP scan + public-info probes can exceed the default 30s budget.
-		return $this->request('POST', '/discover', null, $opts, 90);
-	}
-
-	/**
-	 * Hold-HOME onboarding: ask bridge to fetch BLID/password from robot.
+	 * Enumerate the Litter-Robot 4 units on a Whisker account. Does not bind or
+	 * persist anything bridge-side.
 	 *
-	 * @param array{ip?:string,timeout?:int} $opts
 	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
 	 */
-	public function getPassword(array $opts): array
+	public function onboardLogin(string $email, string $password): array
 	{
-		return $this->request('POST', '/onboard/get-password', null, $opts);
+		return $this->request('POST', '/onboard/login', null, [
+			'email' => $email,
+			'password' => $password,
+		], self::LOGIN_TIMEOUT);
 	}
 
 	/**
-	 * Soft-AP Wi-Fi scan via host wifi-helper (Litter-Robot-* SSIDs).
+	 * Bind the active device for the bridge process.
 	 *
-	 * @param array<string, mixed> $opts
+	 * @param string $deviceId Whisker device id / serial ('' = first LR4 found)
 	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
 	 */
-	public function softapScan(array $opts = []): array
+	public function connect(string $email, string $password, string $deviceId = ''): array
 	{
-		return $this->request('POST', '/onboard/softap-scan', null, $opts, 60);
-	}
-
-	/**
-	 * Soft-AP provision (join robot AP → wlcfg → LAN discover). Long-running.
-	 *
-	 * @param array<string, mixed> $opts
-	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
-	 */
-	public function softapProvision(array $opts): array
-	{
-		return $this->request('POST', '/onboard/softap-provision', null, $opts, 240);
-	}
-
-	/** @return array{ok:bool,status:int,body:?array,raw:string,error:?string} */
-	public function softapStatus(): array
-	{
-		return $this->request('GET', '/onboard/softap-status', null, null, 10);
-	}
-
-	/**
-	 * @param array{blid:string,password:string,ip:string,name?:string} $creds
-	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}
-	 */
-	public function connect(array $creds): array
-	{
-		return $this->request('POST', '/connect', null, $creds);
-	}
-
-	/** @return array{ok:bool,status:int,body:?array,raw:string,error:?string} */
-	public function connectTest(int $robotId = 1): array
-	{
-		return $this->request('POST', '/connect-test', null, ['robot_id' => $robotId]);
+		$body = ['email' => $email, 'password' => $password];
+		if ($deviceId !== '') {
+			$body['device_id'] = $deviceId;
+		}
+		return $this->request('POST', '/connect', null, $body, self::LOGIN_TIMEOUT);
 	}
 
 	/**
@@ -160,9 +125,9 @@ class BridgeClient
 	 *
 	 * @return int HTTP status from upstream (0 on transport failure)
 	 */
-	public function proxyStream(int $robotId = 1, int $timeoutSeconds = 0): int
+	public function proxyStream(int $deviceId = 1, int $timeoutSeconds = 0): int
 	{
-		$url = $this->getBaseUrl() . '/stream?robot_id=' . $robotId;
+		$url = $this->getBaseUrl() . '/stream?device_id=' . $deviceId;
 		$ch = curl_init($url);
 		if ($ch === false) {
 			return 0;

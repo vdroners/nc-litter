@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\Notification;
 
+use OCA\NcLitter\Activity\Provider as ActivityProvider;
 use OCA\NcLitter\AppInfo\Application;
 use OCP\IURLGenerator;
 use OCP\L10N\IFactory;
@@ -36,27 +37,29 @@ class Notifier implements INotifier
 
 		$l = $this->l10nFactory->get(Application::APP_ID, $languageCode);
 		$params = $notification->getSubjectParameters();
-		$robot = (string) ($params['robot'] ?? 'Alfred');
+		$device = (string) ($params['device'] ?? 'Alfred');
 
 		switch ($notification->getSubject()) {
-			case 'mission_complete':
-				$sqft = $params['sqft'] ?? null;
+			case ActivityProvider::SUBJECT_CYCLE_COMPLETE:
+				$duration = $params['duration_s'] ?? null;
 				$notification->setParsedSubject(
-					$sqft !== null
-						? $l->t('%1$s finished cleaning (%2$s sq ft)', [$robot, (string) $sqft])
-						: $l->t('%s finished cleaning', [$robot]),
+					$duration !== null
+						? $l->t('%1$s finished a clean cycle (%2$ss)', [$device, (string) $duration])
+						: $l->t('%s finished a clean cycle', [$device]),
 				);
 				break;
-			case 'mission_error':
-				$title = (string) ($params['title'] ?? 'error');
-				$notification->setParsedSubject($l->t('%1$s error: %2$s', [$robot, $title]));
+			case ActivityProvider::SUBJECT_CYCLE_FAULT:
+				$title = (string) ($params['title'] ?? 'fault');
+				$notification->setParsedSubject($l->t('%1$s fault: %2$s', [$device, $title]));
 				break;
-			case 'bin_full':
-				$notification->setParsedSubject($l->t('%s dust bin is full — empty before the next mission', [$robot]));
+			case ActivityProvider::SUBJECT_DRAWER_FULL:
+				$notification->setParsedSubject(
+					$l->t('%s waste drawer is full — empty it before the next cycle', [$device]),
+				);
 				break;
-			case 'low_battery':
-				$pct = (string) ($params['battery_pct'] ?? '?');
-				$notification->setParsedSubject($l->t('%1$s battery low (%2$s%%)', [$robot, $pct]));
+			case ActivityProvider::SUBJECT_LITTER_LOW:
+				$pct = (string) ($params['litter_level_pct'] ?? '?');
+				$notification->setParsedSubject($l->t('%1$s litter is low (%2$s%%) — top up to the fill line', [$device, $pct]));
 				break;
 			default:
 				throw new \InvalidArgumentException();

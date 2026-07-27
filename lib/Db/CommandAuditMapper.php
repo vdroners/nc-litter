@@ -17,12 +17,12 @@ class CommandAuditMapper extends QBMapper
 		parent::__construct($db, 'nc_litter_command_audit', CommandAudit::class);
 	}
 
-	public function findLatestForRobot(int $robotId): ?CommandAudit
+	public function findLatestForDevice(int $deviceId): ?CommandAudit
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from($this->getTableName())
-			->where($qb->expr()->eq('robot_id', $qb->createNamedParameter($robotId, IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
 			->orderBy('ts', 'DESC')
 			->setMaxResults(1);
 		try {

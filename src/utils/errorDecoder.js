@@ -1,24 +1,43 @@
 /**
  * Client-side view logic for the error decoder panel.
  *
- * The catalog itself is server-side (`knowledge/error_codes.yaml` via
+ * The catalog itself is server-side (`knowledge/error_codes.json` via
  * `ErrorDecoderService`) so notifications, Activity and this panel all quote the
  * same copy. These helpers only decide *whether* to show the panel and how to
- * present a code the server had no entry for.
+ * present a condition the server had no entry for.
  */
 
-/** Codes the robot reports while it is perfectly healthy. */
+import { ageSeconds, statusKey, statusLabel } from './format.js'
+
+/** Decoder kinds that mean "nothing to show". */
 const OK_KINDS = ['ok', 'none']
 
 /**
+ * Statuses that need a human even though the LR4 reports no fault register.
+ * `drawer_full` is the important one: the unit is happy, it simply refuses to
+ * cycle until the drawer is emptied, so `error` stays 0.
+ */
+const ATTENTION_STATUSES = ['drawer_full', 'fault']
+
+/**
+ * Whisker is cloud-polled rather than pushed, so "fresh" is a looser bar than a
+ * local link. Mirrors DeviceService::STALE_AFTER_S.
+ */
+const STALE_AFTER_S = 90
+
+/**
  * @param {object|null} state enriched state DTO
- * @returns {boolean} true when `error` or `not_ready` is non-zero
+ * @returns {boolean} true when the unit reports a fault, or a status that needs
+ *   a hand (a full drawer presents as `error: 0` + `status: drawer_full`)
  */
 export function hasFault(state) {
 	if (!state) {
 		return false
 	}
-	return Number(state.error || 0) !== 0 || Number(state.not_ready || state.notReady || 0) !== 0
+	if (Number(state.error || 0) !== 0) {
+		return true
+	}
+	return ATTENTION_STATUSES.includes(statusKey(state))
 }
 
 /**
@@ -32,30 +51,32 @@ export function faultSeverity(state) {
 	if (Number(state.error || 0) !== 0) {
 		return 'error'
 	}
-	// notReady is "cannot start yet" (bin out, on a cliff, still docked wrong) —
-	// annoying but not a failed mission.
-	return Number(state.not_ready || state.notReady || 0) !== 0 ? 'warning' : 'success'
+	// A full drawer is a chore, not a breakdown: nothing is broken and the unit
+	// resumes on its own the moment the drawer is back.
+	return ATTENTION_STATUSES.includes(statusKey(state)) ? 'warning' : 'success'
 }
 
 /**
  * Resolve what the panel renders: the server-decoded entry when present, an
- * honest placeholder when the catalog has no row for this code.
+ * honest placeholder when the catalog has no row for this condition.
  *
  * @param {object|null} state enriched state DTO
- * @returns {{ show: boolean, severity: string, code: number, kind: string, title: string, detail: string, action: string }}
+ * @returns {{show:boolean,severity:string,code:(string|number),kind:string,title:string,detail:string,action:string}}
  */
 export function decoratedError(state) {
 	const decoded = (state && state.decoded_error) || {}
 	const error = Number((state && state.error) || 0)
-	const notReady = Number((state && (state.not_ready ?? state.notReady)) || 0)
-	const code = Number(decoded.code ?? (error !== 0 ? error : notReady))
-	const kind = decoded.kind || (error !== 0 ? 'error' : (notReady !== 0 ? 'not_ready' : 'ok'))
+	const key = statusKey(state)
+	const code = decoded.code ?? (error !== 0 ? error : key)
+	const kind = decoded.kind
+		|| (error !== 0 ? 'error' : (ATTENTION_STATUSES.includes(key) ? 'not_ready' : 'ok'))
 	const show = hasFault(state) && !OK_KINDS.includes(kind)
 
 	const title = decoded.title
-		|| (error !== 0 ? `Robot error ${error}` : `Robot not ready (${notReady})`)
+		|| (state && state.error_label)
+		|| (error !== 0 ? `Fault reported (${statusLabel(state)})` : statusLabel(state))
 	const detail = decoded.detail
-		|| 'This code is not in the local catalog yet. Check the robot for a physical obstruction, then retry.'
+		|| 'This condition is not in the local catalog yet. Check the globe, bonnet and waste drawer, then start a fresh cycle.'
 
 	return {
 		show,
@@ -70,20 +91,37 @@ export function decoratedError(state) {
 
 /**
  * @param {object|null} state enriched state DTO
- * @returns {boolean} true when the bridge could not own the MQTT session
+ * @param {number} [now] epoch ms (injectable for tests)
+ * @returns {boolean} true when the last sample is too old to trust
  */
-export function isConflict(state) {
+export function isStale(state, now = Date.now()) {
 	if (!state) {
 		return false
 	}
 	const health = state.connection_health || {}
-	return Boolean(state.conflict || health.conflict || health.mqtt === 'conflict')
+	if (typeof health.stale === 'boolean') {
+		return health.stale
+	}
+	// No server verdict (an un-enriched bridge DTO): grade it ourselves on the
+	// same 90 s cloud-poll budget.
+	if (!state.updated_at) {
+		return false
+	}
+	return ageSeconds(state.updated_at, now) > STALE_AFTER_S
 }
 
 /**
  * @param {object|null} state enriched state DTO
- * @returns {boolean} true when the last sample is too old to trust
+ * @returns {boolean} true when the Whisker cloud is not reachable through the
+ *   bridge (the app's equivalent of "device unreachable")
  */
-export function isStale(state) {
-	return Boolean(state && state.connection_health && state.connection_health.stale)
+export function isCloudDown(state) {
+	if (!state) {
+		return false
+	}
+	const health = state.connection_health || {}
+	if (health.cloud) {
+		return String(health.cloud) !== 'up'
+	}
+	return !state.connected && !state.mock
 }

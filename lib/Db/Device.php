@@ -10,18 +10,16 @@ use OCP\AppFramework\Db\Entity;
 /**
  * @method string getName()
  * @method void setName(string $name)
- * @method string getBlid()
- * @method void setBlid(string $blid)
- * @method string getPasswordEnc()
- * @method void setPasswordEnc(string $passwordEnc)
- * @method string getHost()
- * @method void setHost(string $host)
- * @method int getPort()
- * @method void setPort(int $port)
- * @method int getHasPose()
- * @method void setHasPose(int $hasPose)
- * @method string|null getFloorplanPath()
- * @method void setFloorplanPath(?string $floorplanPath)
+ * @method string getAccountEmail()
+ * @method void setAccountEmail(string $accountEmail)
+ * @method string getCredsEnc()
+ * @method void setCredsEnc(string $credsEnc)
+ * @method string getDeviceId()
+ * @method void setDeviceId(string $deviceId)
+ * @method string getModel()
+ * @method void setModel(string $model)
+ * @method string getTimezone()
+ * @method void setTimezone(string $timezone)
  * @method string|null getSettingsJson()
  * @method void setSettingsJson(?string $settingsJson)
  * @method int getCreatedAt()
@@ -29,23 +27,20 @@ use OCP\AppFramework\Db\Entity;
  * @method int getUpdatedAt()
  * @method void setUpdatedAt(int $updatedAt)
  */
-class Robot extends Entity implements JsonSerializable
+class Device extends Entity implements JsonSerializable
 {
 	protected $name;
-	protected $blid;
-	protected $passwordEnc;
-	protected $host;
-	protected $port;
-	protected $hasPose;
-	protected $floorplanPath;
+	protected $accountEmail;
+	protected $credsEnc;
+	protected $deviceId;
+	protected $model;
+	protected $timezone;
 	protected $settingsJson;
 	protected $createdAt;
 	protected $updatedAt;
 
 	public function __construct()
 	{
-		$this->addType('port', 'integer');
-		$this->addType('hasPose', 'integer');
 		$this->addType('createdAt', 'integer');
 		$this->addType('updatedAt', 'integer');
 	}
@@ -55,15 +50,14 @@ class Robot extends Entity implements JsonSerializable
 		return [
 			'id' => (int) $this->id,
 			'name' => (string) $this->name,
-			'blid' => (string) $this->blid,
-			'host' => (string) $this->host,
-			'port' => (int) $this->port,
-			'has_pose' => (bool) $this->hasPose,
-			'floorplan_path' => $this->floorplanPath,
+			'account_email' => (string) $this->accountEmail,
+			'device_id' => (string) $this->deviceId,
+			'model' => (string) $this->model,
+			'timezone' => (string) $this->timezone,
 			'settings' => $this->decodeSettings(),
 			'created_at' => (int) $this->createdAt,
 			'updated_at' => (int) $this->updatedAt,
-			'has_password' => $this->passwordEnc !== null && $this->passwordEnc !== '',
+			'has_creds' => $this->credsEnc !== null && $this->credsEnc !== '',
 		];
 	}
 

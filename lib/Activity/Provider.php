@@ -13,10 +13,10 @@ use OCP\L10N\IFactory;
 
 class Provider implements IProvider
 {
-	public const SUBJECT_MISSION_COMPLETE = 'mission_complete';
-	public const SUBJECT_MISSION_ERROR = 'mission_error';
-	public const SUBJECT_BIN_FULL = 'bin_full';
-	public const SUBJECT_LOW_BATTERY = 'low_battery';
+	public const SUBJECT_CYCLE_COMPLETE = 'cycle_complete';
+	public const SUBJECT_CYCLE_FAULT = 'cycle_fault';
+	public const SUBJECT_DRAWER_FULL = 'drawer_full';
+	public const SUBJECT_LITTER_LOW = 'litter_low';
 
 	public function __construct(
 		private IFactory $l10nFactory,
@@ -31,31 +31,36 @@ class Provider implements IProvider
 		}
 		$l = $this->l10nFactory->get(Application::APP_ID, $language);
 		$params = $event->getSubjectParameters();
-		$robot = (string) ($params['robot'] ?? 'Alfred');
+		$device = (string) ($params['device'] ?? 'Alfred');
 
 		$event->setIcon(
 			$this->url->getAbsoluteURL($this->url->imagePath(Application::APP_ID, 'app.svg')),
 		);
 
 		switch ($event->getSubject()) {
-			case self::SUBJECT_MISSION_COMPLETE:
-				$sqft = $params['sqft'] ?? null;
+			case self::SUBJECT_CYCLE_COMPLETE:
+				$duration = $params['duration_s'] ?? null;
 				$event->setParsedSubject(
-					$sqft !== null
-						? $l->t('%1$s finished cleaning (%2$s sq ft)', [$robot, (string) $sqft])
-						: $l->t('%s finished cleaning', [$robot]),
+					$duration !== null
+						? $l->t('%1$s finished a clean cycle (%2$ss)', [$device, (string) $duration])
+						: $l->t('%s finished a clean cycle', [$device]),
 				);
 				break;
-			case self::SUBJECT_MISSION_ERROR:
-				$title = (string) ($params['title'] ?? 'error');
-				$event->setParsedSubject($l->t('%1$s error: %2$s', [$robot, $title]));
+			case self::SUBJECT_CYCLE_FAULT:
+				$title = (string) ($params['title'] ?? 'fault');
+				$event->setParsedSubject($l->t('%1$s fault: %2$s', [$device, $title]));
 				break;
-			case self::SUBJECT_BIN_FULL:
-				$event->setParsedSubject($l->t('%s dust bin is full', [$robot]));
+			case self::SUBJECT_DRAWER_FULL:
+				$pct = $params['drawer_level_pct'] ?? null;
+				$event->setParsedSubject(
+					$pct !== null
+						? $l->t('%1$s waste drawer is full (%2$s%%)', [$device, (string) $pct])
+						: $l->t('%s waste drawer is full', [$device]),
+				);
 				break;
-			case self::SUBJECT_LOW_BATTERY:
-				$pct = (string) ($params['battery_pct'] ?? '?');
-				$event->setParsedSubject($l->t('%1$s battery low (%2$s%%)', [$robot, $pct]));
+			case self::SUBJECT_LITTER_LOW:
+				$pct = (string) ($params['litter_level_pct'] ?? '?');
+				$event->setParsedSubject($l->t('%1$s litter is low (%2$s%%)', [$device, $pct]));
 				break;
 			default:
 				throw new UnknownActivityException();

@@ -6,13 +6,17 @@ namespace OCA\NcLitter\Service;
 
 use OCA\NcLitter\Activity\Provider as ActivityProvider;
 use OCA\NcLitter\AppInfo\Application;
-use OCA\NcLitter\Util\Litter-RobotGroupAccess;
+use OCA\NcLitter\Util\LitterGroupAccess;
 use OCP\Activity\IManager as IActivityManager;
 use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IUser;
 use OCP\Notification\IManager as INotificationManager;
 
+/**
+ * Fans a litter-box event out to Nextcloud notifications + the Activity stream
+ * for every admin and litter-operators member.
+ */
 class NotifyService
 {
 	public function __construct(
@@ -23,40 +27,40 @@ class NotifyService
 	) {
 	}
 
-	public function missionComplete(string $robotName, int $missionId, ?int $sqft = null): void
+	public function cycleComplete(string $deviceName, int $cycleId, ?int $durationS = null): void
 	{
 		$params = [
-			'robot' => $robotName,
-			'mission_id' => $missionId,
-			'sqft' => $sqft,
+			'device' => $deviceName,
+			'cycle_id' => $cycleId,
+			'duration_s' => $durationS,
 		];
-		$this->notifyUsers('mission_complete', $params);
-		$this->publishActivity(ActivityProvider::SUBJECT_MISSION_COMPLETE, $params);
+		$this->notifyUsers('cycle_complete', $params);
+		$this->publishActivity(ActivityProvider::SUBJECT_CYCLE_COMPLETE, $params);
 	}
 
-	public function missionError(string $robotName, string $title, int $errorCode): void
+	public function cycleFault(string $deviceName, string $title, int|string $errorCode): void
 	{
 		$params = [
-			'robot' => $robotName,
+			'device' => $deviceName,
 			'title' => $title,
-			'error_code' => $errorCode,
+			'error_code' => (string) $errorCode,
 		];
-		$this->notifyUsers('mission_error', $params);
-		$this->publishActivity(ActivityProvider::SUBJECT_MISSION_ERROR, $params);
+		$this->notifyUsers('cycle_fault', $params);
+		$this->publishActivity(ActivityProvider::SUBJECT_CYCLE_FAULT, $params);
 	}
 
-	public function binFull(string $robotName): void
+	public function drawerFull(string $deviceName, ?int $pct = null): void
 	{
-		$params = ['robot' => $robotName];
-		$this->notifyUsers('bin_full', $params);
-		$this->publishActivity(ActivityProvider::SUBJECT_BIN_FULL, $params);
+		$params = ['device' => $deviceName, 'drawer_level_pct' => $pct];
+		$this->notifyUsers('drawer_full', $params);
+		$this->publishActivity(ActivityProvider::SUBJECT_DRAWER_FULL, $params);
 	}
 
-	public function lowBattery(string $robotName, int $pct): void
+	public function litterLow(string $deviceName, int $pct): void
 	{
-		$params = ['robot' => $robotName, 'battery_pct' => $pct];
-		$this->notifyUsers('low_battery', $params);
-		$this->publishActivity(ActivityProvider::SUBJECT_LOW_BATTERY, $params);
+		$params = ['device' => $deviceName, 'litter_level_pct' => $pct];
+		$this->notifyUsers('litter_low', $params);
+		$this->publishActivity(ActivityProvider::SUBJECT_LITTER_LOW, $params);
 	}
 
 	/** @param array<string, mixed> $params */
@@ -67,7 +71,7 @@ class NotifyService
 			$n->setApp(Application::APP_ID)
 				->setUser($uid)
 				->setDateTime(new \DateTime())
-				->setObject('robot', (string) ($params['robot'] ?? 'alfred'))
+				->setObject('device', (string) ($params['device'] ?? 'alfred'))
 				->setSubject($subject, $params);
 			$this->notifications->notify($n);
 		}
@@ -81,7 +85,7 @@ class NotifyService
 			->setType(Application::APP_ID)
 			->setAuthor('system')
 			->setSubject($subject, $params)
-			->setObject('robot', 0, (string) ($params['robot'] ?? 'Alfred'))
+			->setObject('device', 0, (string) ($params['device'] ?? 'Alfred'))
 			->setTimestamp(time());
 		try {
 			$this->activity->publish($event);
@@ -100,7 +104,7 @@ class NotifyService
 				$uids[$user->getUID()] = true;
 			}
 		}
-		$groupId = Litter-RobotGroupAccess::operatorGroupId($this->config);
+		$groupId = LitterGroupAccess::operatorGroupId($this->config);
 		$ops = $this->groupManager->get($groupId);
 		if ($ops !== null) {
 			foreach ($ops->getUsers() as $user) {

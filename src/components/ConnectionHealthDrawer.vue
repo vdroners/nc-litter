@@ -11,17 +11,19 @@
 			</NcButton>
 		</div>
 
-		<NcNoteCard v-if="conflictMessage" type="warning" heading="Single MQTT session in use">
-			{{ conflictMessage }}
+		<NcNoteCard v-if="cloudDown" type="warning" heading="Whisker cloud not reachable">
+			The bridge cannot reach the Whisker cloud, so no fresh readings are arriving.
+			Readings shown elsewhere are the last known values.
 		</NcNoteCard>
-		<NcNoteCard v-else-if="stale" type="warning" heading="State is stale">
-			No fresh sample from the robot. The bridge may have lost the session.
+		<NcNoteCard v-else-if="stale" type="warning" heading="Readings are stale">
+			Nothing new from the Whisker cloud in over a minute and a half. The unit may be
+			off the network, or the account session may need re-authenticating.
 		</NcNoteCard>
 
 		<dl class="nc-litter-stats">
 			<div class="nc-litter-stats__item">
-				<dt>MQTT</dt>
-				<dd data-field="mqtt">{{ mqtt }}</dd>
+				<dt>Whisker cloud</dt>
+				<dd data-field="cloud">{{ cloud }}</dd>
 			</div>
 			<div class="nc-litter-stats__item">
 				<dt>Bridge</dt>
@@ -48,7 +50,8 @@
 			</NcButton>
 		</div>
 		<p v-if="!canAdmin" class="nc-litter-muted">
-			Retry needs an administrator — the connect test rewrites the bridge session.
+			Retry needs an administrator — it re-authenticates the stored Whisker account
+			and re-binds the bridge.
 		</p>
 	</aside>
 </template>
@@ -56,20 +59,26 @@
 <script>
 import { NcButton, NcNoteCard } from '@nextcloud/vue'
 
-/** Fallback when PHP has not supplied `connection_health.recovery`. */
+import { isCloudDown, isStale } from '../utils/errorDecoder.js'
+
+/**
+ * Fallback when PHP has not supplied `connection_health.recovery`. Whisker is a
+ * cloud integration, so recovery is about power, Wi-Fi and the account session —
+ * there is no local session for another app to steal.
+ */
 const DEFAULT_CHECKLIST = [
-	'Close the iRobot mobile app completely — it takes the robot\'s only MQTT session.',
-	'Stop any other Litter-Robot integration (Home Assistant, rest980) pointed at this robot.',
-	'Wait 30 seconds for the robot to drop the stale session.',
-	'Press Retry connect.',
-	'Confirm the robot still has its DHCP reservation (the IP must not move).',
-	'From the Nextcloud host: nc -zv <alfred-ip> 8883',
+	'Confirm the unit has power and its status ring is lit.',
+	'Check it is on the house Wi-Fi — Whisker is cloud-polled, not local.',
+	'Open the Whisker mobile app: if it is blind too, the outage is upstream.',
+	'Re-enter the Whisker account password in Administration → NC Litter, then Retry connect.',
+	'Confirm the bridge container is up and has outbound network access.',
 ]
 
 /**
- * UI-7: the robot accepts one MQTT client at a time, which is the single most
- * common support call. This drawer states which side owns the session and what
- * to do about it, instead of leaving a red chip with no explanation.
+ * UI-7: state arrives by cloud poll, so "why is this stale" has a handful of
+ * plausible causes. This drawer states what the app can see (cloud, bridge,
+ * transport, last command) and what to do about it, instead of leaving a red chip
+ * with no explanation.
  */
 export default {
 	name: 'ConnectionHealthDrawer',
@@ -100,14 +109,17 @@ export default {
 		health() {
 			return (this.state && this.state.connection_health) || {}
 		},
-		mqtt() {
-			return this.health.mqtt || 'unknown'
+		cloud() {
+			if (this.state && this.state.mock) {
+				return 'mock'
+			}
+			return this.health.cloud || 'unknown'
+		},
+		cloudDown() {
+			return isCloudDown(this.state)
 		},
 		stale() {
-			return Boolean(this.health.stale)
-		},
-		conflictMessage() {
-			return (this.state && this.state.conflict) || this.health.conflict || ''
+			return isStale(this.state)
 		},
 		bridgeLabel() {
 			const bridge = (this.state && this.state.bridge) || {}

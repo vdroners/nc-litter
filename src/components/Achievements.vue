@@ -34,24 +34,23 @@ import { achievementSummary, evaluateAchievements } from '../utils/achievements.
 const SEEN_KEY = 'nc_litter_achv_seen'
 
 /**
- * Butler-themed achievement wall. Everything is derived live from the robot's
- * own counters (via `evaluateAchievements`); nothing is persisted server-side.
- * Newly-unlocked badges (versus the set last seen in localStorage) get a "New!"
- * tag so returning to the tab feels rewarding without any notification spam.
+ * Cat-valet achievement wall. Everything is derived live from the unit's own
+ * counters and the recorded cycle log (via `evaluateAchievements`); nothing is
+ * persisted server-side. Newly-unlocked badges (versus the set last seen in
+ * localStorage) get a "New!" tag so returning to the tab feels rewarding without
+ * any notification spam.
  */
 export default {
 	name: 'Achievements',
 
 	props: {
-		bbrun: {
+		/** Enriched state DTO — lifetime cycles, cat weight, cycles since empty. */
+		state: {
 			type: Object,
 			default: () => ({}),
 		},
-		bbmssn: {
-			type: Object,
-			default: () => ({}),
-		},
-		missions: {
+		/** Recorded cycle rows, newest first. */
+		cycles: {
 			type: Array,
 			default: () => [],
 		},
@@ -63,11 +62,7 @@ export default {
 
 	computed: {
 		achievements() {
-			return evaluateAchievements({
-				bbrun: this.bbrun,
-				bbmssn: this.bbmssn,
-				missions: this.missions,
-			})
+			return evaluateAchievements({ state: this.state, cycles: this.cycles })
 		},
 		summary() {
 			return achievementSummary(this.achievements)

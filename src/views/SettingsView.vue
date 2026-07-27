@@ -2,78 +2,113 @@
 	<div class="nc-litter-view">
 		<div class="nc-litter-view__header">
 			<h2>Settings</h2>
-			<p class="nc-litter-muted">Schedule and cleaning preferences.</p>
+			<p class="nc-litter-muted">Quiet hours and the unit's own preferences.</p>
 		</div>
 
-		<ScheduleWeekGrid
-			:value="store.schedule"
-			:next="store.nextScheduled"
-			:disabled="!store.canOperate"
-			@save="saveSchedule" />
+		<!-- ── Sleep window ────────────────────────────────────────────────── -->
+		<div class="nc-litter-panel" data-testid="sleep-schedule">
+			<h3>Sleep window</h3>
+			<p class="nc-litter-muted">
+				During its sleep window {{ deviceName }} holds off cycling, so the household is
+				not woken by the globe. Times are the <strong>unit's own</strong> clock.
+			</p>
 
-		<div class="nc-litter-panel" data-testid="preferences">
-			<h3>Cleaning preferences</h3>
-			<p v-if="!store.preferences" class="nc-litter-muted">Reading preferences from {{ robotName }}…</p>
+			<NcCheckboxRadioSwitch
+				:checked="form.sleepEnabled"
+				:disabled="locked"
+				type="switch"
+				data-field="sleep-enabled"
+				@update:checked="form.sleepEnabled = $event">
+				Observe a nightly sleep window
+			</NcCheckboxRadioSwitch>
+
+			<div class="nc-litter-timepair">
+				<label>
+					Start
+					<input
+						v-model="form.sleepStart"
+						:disabled="locked || !form.sleepEnabled"
+						class="nc-litter-timepair__time"
+						data-field="sleep-start"
+						type="time">
+				</label>
+				<label>
+					End
+					<input
+						v-model="form.sleepEnd"
+						:disabled="locked || !form.sleepEnabled"
+						class="nc-litter-timepair__time"
+						data-field="sleep-end"
+						type="time">
+				</label>
+				<p class="nc-litter-muted" data-field="sleep-window-note">
+					The bridge persists the on/off switch today; the window itself is whatever the
+					Whisker app has stored on the unit, and it is reported back here.
+				</p>
+			</div>
+
+			<div class="nc-litter-actions">
+				<NcButton type="primary" :disabled="locked || !sleepDirty" @click="saveSleep">
+					{{ saving === 'sleep' ? 'Saving…' : 'Save sleep window' }}
+				</NcButton>
+				<NcButton :disabled="!sleepDirty" @click="resetForm">Discard changes</NcButton>
+			</div>
+		</div>
+
+		<!-- ── LR4 device settings ─────────────────────────────────────────── -->
+		<div class="nc-litter-panel" data-testid="device-settings">
+			<h3>Unit preferences</h3>
+			<p v-if="!store.settings" class="nc-litter-muted">Reading preferences from {{ deviceName }}…</p>
 
 			<template v-else>
+				<NcCheckboxRadioSwitch
+					:checked="form.nightLight"
+					:disabled="locked"
+					type="switch"
+					data-field="night-light"
+					@update:checked="form.nightLight = $event">
+					Night light (glows around the globe opening after dark)
+				</NcCheckboxRadioSwitch>
+				<NcCheckboxRadioSwitch
+					:checked="form.panelLock"
+					:disabled="locked"
+					type="switch"
+					data-field="panel-lock"
+					@update:checked="form.panelLock = $event">
+					Panel lock (ignore taps on the unit's own buttons)
+				</NcCheckboxRadioSwitch>
+
 				<fieldset class="nc-litter-fieldset">
-					<legend>Carpet boost</legend>
+					<legend>Wait time after a visit</legend>
 					<!-- Radio groups derive "checked" from model-value === value, so the
-					     current selection must be bound via :model-value, not :checked. -->
+					     current selection MUST be bound via :model-value, not :checked. -->
 					<NcCheckboxRadioSwitch
-						v-for="option in carpetOptions"
-						:key="option.value"
-						:model-value="prefs.carpet_boost"
-						:value="option.value"
+						v-for="min in waitOptions"
+						:key="min"
+						:model-value="String(form.waitTime)"
+						:value="String(min)"
 						:disabled="locked"
-						name="carpet_boost"
+						name="wait_time"
 						type="radio"
-						@update:model-value="prefs.carpet_boost = $event">
-						{{ option.label }}
+						@update:model-value="form.waitTime = Number($event)">
+						{{ waitTimeLabel(min) }}
 					</NcCheckboxRadioSwitch>
+					<p class="nc-litter-muted">
+						How long the unit waits after your companion steps off before it cycles.
+					</p>
 				</fieldset>
-
-				<fieldset class="nc-litter-fieldset">
-					<legend>Cleaning passes</legend>
-					<NcCheckboxRadioSwitch
-						v-for="option in passOptions"
-						:key="option.value"
-						:model-value="prefs.cleaning_passes"
-						:value="option.value"
-						:disabled="locked"
-						name="cleaning_passes"
-						type="radio"
-						@update:model-value="prefs.cleaning_passes = $event">
-						{{ option.label }}
-					</NcCheckboxRadioSwitch>
-				</fieldset>
-
-				<NcCheckboxRadioSwitch
-					:checked="prefs.edge_clean"
-					:disabled="locked"
-					type="switch"
-					@update:checked="prefs.edge_clean = $event">
-					Edge clean (run the side brush along walls)
-				</NcCheckboxRadioSwitch>
-				<NcCheckboxRadioSwitch
-					:checked="prefs.always_finish"
-					:disabled="locked"
-					type="switch"
-					@update:checked="prefs.always_finish = $event">
-					Always finish (keep cleaning when the bin fills)
-				</NcCheckboxRadioSwitch>
 
 				<div class="nc-litter-actions">
 					<NcButton type="primary" :disabled="locked || !prefsDirty" @click="savePrefs">
-						{{ savingPrefs ? 'Saving…' : 'Save preferences' }}
+						{{ saving === 'prefs' ? 'Saving…' : 'Save preferences' }}
 					</NcButton>
-					<NcButton :disabled="savingPrefs" @click="reloadPrefs">Reload from robot</NcButton>
+					<NcButton :disabled="!!saving" @click="reload">Reload from the unit</NcButton>
 				</div>
 			</template>
 		</div>
 
 		<p class="nc-litter-muted nc-litter-admin-pointer">
-			Robot discovery, onboarding and data retention live in
+			Whisker onboarding, the bridge URL and data retention live in
 			<strong>Administration → NC Litter</strong>.
 		</p>
 
@@ -84,46 +119,47 @@
 <script>
 import { NcButton, NcCheckboxRadioSwitch, NcNoteCard } from '@nextcloud/vue'
 
-import ScheduleWeekGrid from '../components/ScheduleWeekGrid.vue'
-import { useRobotStore } from '../store/robot.js'
+import { useDeviceStore } from '../store/device.js'
+import { WAIT_TIME_OPTIONS, clockLabel, waitTimeLabel } from '../utils/format.js'
 
-const CARPET_OPTIONS = [
-	{ value: 'auto', label: 'Auto (boost on carpet)' },
-	{ value: 'performance', label: 'Performance (always high power)' },
-	{ value: 'eco', label: 'Eco (quiet, longer runtime)' },
-]
-
-const PASS_OPTIONS = [
-	{ value: 'auto', label: 'Auto (decide per room)' },
-	{ value: 'one', label: 'One pass' },
-	{ value: 'two', label: 'Two passes' },
-]
+/** Fallback wait time when the unit has not reported one yet. */
+const DEFAULT_WAIT_MIN = 7
 
 /**
- * @param {object|null} preferences store preferences block
- * @returns {object} editable copy with defaults filled in
+ * Build the editable form from the settings block the unit reports, falling back
+ * to the live state DTO (which carries the same flags) so the card paints before
+ * the first settings round-trip lands.
+ *
+ * @param {object|null} settings settings block from the bridge
+ * @param {object|null} state enriched state DTO
+ * @returns {object} editable copy
  */
-function editableCopy(preferences) {
-	const p = preferences || {}
+function editableCopy(settings, state) {
+	const s = settings || {}
+	const dto = state || {}
+	const sleep = s.sleep || dto.sleep_schedule || {}
+	const wait = Number(s.wait_time ?? dto.wait_time)
 	return {
-		carpet_boost: p.carpet_boost || 'auto',
-		cleaning_passes: p.cleaning_passes || 'auto',
-		edge_clean: p.edge_clean !== false,
-		always_finish: p.always_finish !== false,
+		sleepEnabled: Boolean(sleep.enabled ?? dto.sleeping ?? false),
+		sleepStart: clockLabel(sleep.start_time),
+		sleepEnd: clockLabel(sleep.end_time),
+		nightLight: Boolean(s.night_light ?? dto.night_light ?? false),
+		panelLock: Boolean(s.panel_lock ?? dto.panel_lock ?? false),
+		waitTime: Number.isFinite(wait) && wait > 0 ? wait : DEFAULT_WAIT_MIN,
 	}
 }
 
 export default {
 	name: 'SettingsView',
 
-	components: { NcButton, NcCheckboxRadioSwitch, NcNoteCard, ScheduleWeekGrid },
+	components: { NcButton, NcCheckboxRadioSwitch, NcNoteCard },
 
 	data() {
 		return {
-			carpetOptions: CARPET_OPTIONS,
-			passOptions: PASS_OPTIONS,
-			prefs: editableCopy(null),
-			savingPrefs: false,
+			waitOptions: WAIT_TIME_OPTIONS,
+			form: editableCopy(null, null),
+			/** @type {'sleep'|'prefs'|null} */
+			saving: null,
 			notice: '',
 			noticeType: 'success',
 		}
@@ -131,43 +167,73 @@ export default {
 
 	computed: {
 		store() {
-			return useRobotStore()
+			return useDeviceStore()
 		},
-		robotName() {
-			const boot = this.store.bootstrap || {}
-			return (this.store.state && this.store.state.name)
-				|| (boot.robot && boot.robot.name)
-				|| 'Litter-Robot'
+		deviceName() {
+			return this.store.deviceName
 		},
 		locked() {
-			return !this.store.canOperate || this.savingPrefs
+			return !this.store.canOperate || Boolean(this.saving)
+		},
+		/** Server-side truth, for the dirty comparisons. */
+		serverForm() {
+			return editableCopy(this.store.settings, this.store.state)
+		},
+		sleepDirty() {
+			const a = this.form
+			const b = this.serverForm
+			return a.sleepEnabled !== b.sleepEnabled
+				|| a.sleepStart !== b.sleepStart
+				|| a.sleepEnd !== b.sleepEnd
 		},
 		prefsDirty() {
-			return JSON.stringify(this.prefs) !== JSON.stringify(editableCopy(this.store.preferences))
+			const a = this.form
+			const b = this.serverForm
+			return a.nightLight !== b.nightLight
+				|| a.panelLock !== b.panelLock
+				|| a.waitTime !== b.waitTime
+		},
+		dirty() {
+			return this.sleepDirty || this.prefsDirty
 		},
 	},
 
 	watch: {
-		'store.preferences': {
+		'store.settings': {
 			deep: true,
-			handler(preferences) {
-				// Only adopt the robot's values when the user has no unsaved edits.
-				// Otherwise a routine live-state poll would overwrite the pending
-				// selection (the "it snaps back to auto" bug) before Save.
-				if (!this.prefsDirty) {
-					this.prefs = editableCopy(preferences)
-				}
+			handler() {
+				this.syncFromServer()
+			},
+		},
+		// The live state carries the same flags, so a routine poll must not clobber
+		// an unsaved selection either (the "it snaps back to the old value" bug).
+		'store.state': {
+			deep: true,
+			handler() {
+				this.syncFromServer()
 			},
 		},
 	},
 
 	async mounted() {
-		await this.store.loadSchedule()
-		await this.store.loadPreferences()
-		this.prefs = editableCopy(this.store.preferences)
+		await this.store.loadSettings()
+		this.resetForm()
 	},
 
 	methods: {
+		waitTimeLabel,
+
+		/** Adopt the unit's values only when the operator has no unsaved edits. */
+		syncFromServer() {
+			if (!this.dirty) {
+				this.form = this.serverForm
+			}
+		},
+
+		resetForm() {
+			this.form = this.serverForm
+		},
+
 		/**
 		 * @param {string} message operator-facing text
 		 * @param {'success'|'warning'|'error'} [type]
@@ -177,27 +243,47 @@ export default {
 			this.noticeType = type
 		},
 
-		/**
-		 * @param {object} week dorita980 week shape
-		 */
-		async saveSchedule(week) {
-			await this.store.saveSchedule(week)
-			this.report(this.store.error || `Schedule written to ${this.robotName}.`, this.store.error ? 'error' : 'success')
-		},
-
-		async savePrefs() {
-			this.savingPrefs = true
+		async saveSleep() {
+			this.saving = 'sleep'
 			try {
-				await this.store.savePreferences({ ...this.prefs })
-				this.report(this.store.error || `Preferences written to ${this.robotName}.`, this.store.error ? 'error' : 'success')
+				await this.store.saveSettings({
+					sleep: {
+						enabled: this.form.sleepEnabled,
+						start_time: this.form.sleepStart,
+						end_time: this.form.sleepEnd,
+					},
+				})
+				this.report(
+					this.store.error || `Sleep window written to ${this.deviceName}.`,
+					this.store.error ? 'error' : 'success',
+				)
 			} finally {
-				this.savingPrefs = false
+				this.saving = null
+				this.resetForm()
 			}
 		},
 
-		async reloadPrefs() {
-			await this.store.loadPreferences()
-			this.prefs = editableCopy(this.store.preferences)
+		async savePrefs() {
+			this.saving = 'prefs'
+			try {
+				await this.store.saveSettings({
+					night_light: this.form.nightLight,
+					panel_lock: this.form.panelLock,
+					wait_time: this.form.waitTime,
+				})
+				this.report(
+					this.store.error || `Preferences written to ${this.deviceName}.`,
+					this.store.error ? 'error' : 'success',
+				)
+			} finally {
+				this.saving = null
+				this.resetForm()
+			}
+		},
+
+		async reload() {
+			await this.store.loadSettings()
+			this.resetForm()
 		},
 	},
 }

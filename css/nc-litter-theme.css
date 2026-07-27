@@ -286,7 +286,8 @@ body.theme--dark .nc-gcs-app-shell,
 }
 
 /*
- * NC Litter owns a brass accent (defined in style.scss, which loads after this
- * file). The teal accent that used to be pinned here was dead weight — it was
- * always overridden — so it has been removed to avoid confusion.
+ * NC Litter owns a tabby-amber accent (`--nc-app-accent: #d8a45e`, defined in
+ * style.scss, which loads after this file). The teal accent that used to be
+ * pinned here was dead weight — it was always overridden — so it has been
+ * removed to avoid confusion.
  */

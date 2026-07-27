@@ -1,8 +1,8 @@
 {
   "name": "nc_litter",
-  "version": "0.9.1",
+  "version": "0.1.0",
   "private": true,
-  "description": "NC Litter — Nextcloud control for Litter-Robot over local MQTT",
+  "description": "NC Litter — Nextcloud app for the Whisker Litter-Robot 4",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "build": "sass css/style.scss css/style.css --no-source-map && webpack --mode production",

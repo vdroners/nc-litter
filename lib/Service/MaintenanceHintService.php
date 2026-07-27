@@ -6,6 +6,10 @@ namespace OCA\NcLitter\Service;
 
 /**
  * Loads knowledge/maintenance_thresholds.json and emits advisory hints.
+ *
+ * Every LR4 rule is a `metric_state` comparison against one key of the metric
+ * map the caller assembles from the bridge DTO (`drawer_level_pct`,
+ * `litter_level_pct`, `cycles_since_empty`).
  */
 class MaintenanceHintService
 {
@@ -18,18 +22,17 @@ class MaintenanceHintService
 	}
 
 	/**
-	 * @param array<string, mixed> $bbrun
-	 * @param array<string, mixed> $state
+	 * @param array<string, mixed> $metrics values keyed by the rules' `metric_state`
 	 * @return list<array{id:string,severity:string,title:string,detail:string,action:string}>
 	 */
-	public function hintsFor(array $bbrun, array $state = []): array
+	public function hintsFor(array $metrics): array
 	{
 		$hints = [];
 		foreach ($this->load() as $rule) {
 			if (!is_array($rule) || empty($rule['id'])) {
 				continue;
 			}
-			if ($this->matches($rule, $bbrun, $state)) {
+			if ($this->matches($rule, $metrics)) {
 				$hints[] = [
 					'id' => (string) $rule['id'],
 					'severity' => (string) ($rule['severity'] ?? 'info'),
@@ -61,48 +64,41 @@ class MaintenanceHintService
 	}
 
 	/**
+	 * A rule fires only when its metric is present and numeric (or, for
+	 * `equals`, string-comparable). A missing metric never fires a hint, so an
+	 * unsupported sensor stays silent instead of shouting.
+	 *
 	 * @param array<string, mixed> $rule
-	 * @param array<string, mixed> $bbrun
-	 * @param array<string, mixed> $state
+	 * @param array<string, mixed> $metrics
 	 */
-	private function matches(array $rule, array $bbrun, array $state): bool
+	private function matches(array $rule, array $metrics): bool
 	{
-		if (isset($rule['metric_state'])) {
-			$key = (string) $rule['metric_state'];
-			$value = $state[$key] ?? null;
-			if (array_key_exists('equals', $rule)) {
-				return (string) $value === (string) $rule['equals'];
-			}
-			if (array_key_exists('lte', $rule) && is_numeric($value)) {
-				return (float) $value <= (float) $rule['lte'];
-			}
-			if (array_key_exists('gte', $rule) && is_numeric($value)) {
-				return (float) $value >= (float) $rule['gte'];
-			}
+		$key = (string) ($rule['metric_state'] ?? '');
+		if ($key === '' || !array_key_exists($key, $metrics)) {
 			return false;
 		}
-
-		$metric = (string) ($rule['metric'] ?? '');
-		if ($metric === '' || !isset($bbrun[$metric]) || !is_numeric($bbrun[$metric])) {
+		$value = $metrics[$key];
+		if ($value === null) {
 			return false;
 		}
-		$value = (float) $bbrun[$metric];
-
-		if (isset($rule['ratio_gt'], $rule['per_hours_metric'])) {
-			$hoursKey = (string) $rule['per_hours_metric'];
-			$hours = isset($bbrun[$hoursKey]) && is_numeric($bbrun[$hoursKey])
-				? (float) $bbrun[$hoursKey]
-				: 0.0;
-			if ($hours <= 0.0) {
-				return false;
-			}
-			return ($value / $hours) > (float) $rule['ratio_gt'];
+		if (array_key_exists('equals', $rule)) {
+			return (string) $value === (string) $rule['equals'];
+		}
+		if (!is_numeric($value)) {
+			return false;
+		}
+		$n = (float) $value;
+		if (array_key_exists('lte', $rule)) {
+			return $n <= (float) $rule['lte'];
+		}
+		if (array_key_exists('lt', $rule)) {
+			return $n < (float) $rule['lt'];
 		}
 		if (array_key_exists('gte', $rule)) {
-			return $value >= (float) $rule['gte'];
+			return $n >= (float) $rule['gte'];
 		}
 		if (array_key_exists('gt', $rule)) {
-			return $value > (float) $rule['gt'];
+			return $n > (float) $rule['gt'];
 		}
 		return false;
 	}

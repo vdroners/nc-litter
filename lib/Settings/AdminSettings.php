@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace OCA\NcLitter\Settings;
 
 use OCA\NcLitter\AppInfo\Application;
-use OCA\NcLitter\Service\RobotService;
+use OCA\NcLitter\Service\DeviceService;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IURLGenerator;
 use OCP\Settings\ISettings;
@@ -14,7 +14,7 @@ use OCP\Util;
 class AdminSettings implements ISettings
 {
 	public function __construct(
-		private RobotService $robots,
+		private DeviceService $devices,
 		private IURLGenerator $urlGenerator,
 	) {
 	}
@@ -25,16 +25,16 @@ class AdminSettings implements ISettings
 		Util::addStyle(Application::APP_ID, 'style');
 		Util::addScript(Application::APP_ID, 'nc_litter-admin');
 
-		$boot = $this->robots->adminBootstrap();
+		$boot = $this->devices->adminBootstrap();
 		$params = [
 			'bridge_url' => $boot['bridge_url'],
 			'operator_group' => $boot['operator_group'],
 			'retention_days' => $boot['retention_days'],
-			'robot' => $boot['robot'],
-			'home_wifi' => $boot['home_wifi'] ?? null,
+			'device' => $boot['device'],
+			'alfred' => $boot['alfred'],
 			'save_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.adminSave'),
-			'onboard_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.onboard'),
-			'discover_url' => $this->urlGenerator->linkToRoute('nc_litter.robot.discover'),
+			'onboard_login_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.onboardLogin'),
+			'onboard_select_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.onboardSelect'),
 			'retention_dry_run_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.retentionDryRun'),
 			'retention_apply_url' => $this->urlGenerator->linkToRoute('nc_litter.settings.retentionApply'),
 		];

@@ -7,7 +7,7 @@
 			</div>
 		</dl>
 
-		<div v-if="successRate !== null" class="nc-litter-donut-row">
+		<div v-if="faultFreeRate !== null" class="nc-litter-donut-row">
 			<svg class="nc-litter-donut" viewBox="0 0 44 44" aria-hidden="true">
 				<circle class="nc-litter-donut__track" cx="22" cy="22" r="18" />
 				<circle
@@ -18,11 +18,11 @@
 					:stroke-dasharray="donutCirc"
 					:stroke-dashoffset="donutOffset"
 					transform="rotate(-90 22 22)" />
-				<text class="nc-litter-donut__label" x="22" y="22" dominant-baseline="central" text-anchor="middle">{{ successRate }}%</text>
+				<text class="nc-litter-donut__label" x="22" y="22" dominant-baseline="central" text-anchor="middle">{{ faultFreeRate }}%</text>
 			</svg>
 			<div>
-				<p class="nc-litter-donut-row__title">Mission success rate</p>
-				<p class="nc-litter-muted">{{ successCaption }}</p>
+				<p class="nc-litter-donut-row__title">Fault-free cycles</p>
+				<p class="nc-litter-muted">{{ faultFreeCaption }}</p>
 			</div>
 		</div>
 
@@ -32,50 +32,44 @@
 				<dd>{{ stat.value }}</dd>
 			</div>
 		</dl>
-		<p v-else class="nc-litter-muted">Lifetime counters appear once {{ robotName }} reports them.</p>
+		<p v-else class="nc-litter-muted">Lifetime counters appear once {{ deviceName }} reports them.</p>
 	</div>
 </template>
 
 <script>
-import { durationLabel } from '../utils/format.js'
+import { catWeightLabel, durationLabel } from '../utils/format.js'
 
 /** Donut geometry: r=18 → circumference 2πr. */
 const DONUT_CIRC = 2 * Math.PI * 18
 
+/** A drawer at or below this percent counts as freshly emptied. */
+const DRAWER_EMPTY_PCT = 5
+
 /**
- * Presentational lifetime rollup shared by the Dashboard (health zone) and the
- * History tab. Everything here comes from the robot's own `bbrun` / `bbmssn`
- * counters — no cloud, no NC-side aggregation.
+ * Presentational lifetime rollup shared by the Dashboard (health rail) and the
+ * History tab. The odometer figures come from the unit's own counters; empties,
+ * average cat weight and the litter-change interval are derived from the cycles
+ * this app recorded.
  */
 export default {
 	name: 'LifetimeStats',
 
 	props: {
-		/** Lifetime run counters (hr, min, sqft, nStuck, nPicks, nPanics…). */
-		bbrun: {
+		/** Enriched state DTO — the source of the lifetime odometer. */
+		state: {
 			type: Object,
 			default: () => ({}),
 		},
-		/** Lifetime mission counters (nMssn, nMssnOk, aMssnM…). */
-		bbmssn: {
-			type: Object,
-			default: () => ({}),
+		/** Recorded cycle rows, newest first. */
+		cycles: {
+			type: Array,
+			default: () => [],
 		},
-		/** Robot model SKU, e.g. `R960020`. */
-		sku: {
+		deviceName: {
 			type: String,
-			default: '',
+			default: 'the unit',
 		},
-		/** Robot firmware string, e.g. `v2.4.17-138`. */
-		softwareVersion: {
-			type: String,
-			default: '',
-		},
-		robotName: {
-			type: String,
-			default: 'the robot',
-		},
-		/** Hide the model/firmware identity card (Dashboard already shows it elsewhere). */
+		/** Hide the model/serial identity card (the Dashboard shows it elsewhere). */
 		showIdentity: {
 			type: Boolean,
 			default: true,
@@ -83,51 +77,95 @@ export default {
 	},
 
 	computed: {
-		stats() {
-			const run = this.bbrun || {}
-			const mssn = this.bbmssn || {}
-			const rows = []
-			if (Number.isFinite(Number(run.hr)) || Number.isFinite(Number(run.min))) {
-				rows.push({ label: 'Run time', value: durationLabel((Number(run.hr) || 0) * 3600 + (Number(run.min) || 0) * 60) })
-			}
-			if (Number.isFinite(Number(run.sqft))) {
-				rows.push({ label: 'Area cleaned', value: `${Number(run.sqft).toLocaleString()} sq ft` })
-			}
-			if (Number.isFinite(Number(mssn.nMssn))) {
-				rows.push({ label: 'Missions', value: Number(mssn.nMssn).toLocaleString() })
-			}
-			if (Number.isFinite(Number(mssn.nMssn)) && Number(mssn.nMssn) > 0
-				&& Number.isFinite(Number(mssn.nMssnOk))) {
-				rows.push({ label: 'Success rate', value: `${Math.round((Number(mssn.nMssnOk) / Number(mssn.nMssn)) * 100)}%` })
-			}
-			if (Number.isFinite(Number(mssn.aMssnM))) {
-				rows.push({ label: 'Avg mission', value: durationLabel(Number(mssn.aMssnM) * 60) })
-			}
-			if (Number.isFinite(Number(run.nStuck))) {
-				rows.push({ label: 'Times stuck', value: Number(run.nStuck).toLocaleString() })
-			}
-			return rows
+		rows() {
+			return Array.isArray(this.cycles) ? this.cycles : []
 		},
 
-		/** @returns {number|null} whole-percent success rate, or null when unknown */
-		successRate() {
-			const total = Number(this.bbmssn && this.bbmssn.nMssn)
-			const ok = Number(this.bbmssn && this.bbmssn.nMssnOk)
-			if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(ok)) {
+		/** @returns {number} recorded cycles whose drawer ended empty */
+		empties() {
+			return this.rows.filter((c) => c.drawer_after !== null
+				&& c.drawer_after !== undefined
+				&& Number(c.drawer_after) <= DRAWER_EMPTY_PCT).length
+		},
+
+		/** @returns {number|null} mean recorded cat weight, in pounds */
+		avgCatWeight() {
+			const weights = this.rows
+				.map((c) => Number(c.cat_weight))
+				.filter((w) => Number.isFinite(w) && w > 0)
+			if (weights.length === 0) {
 				return null
 			}
-			return Math.round((ok / total) * 100)
+			return weights.reduce((a, b) => a + b, 0) / weights.length
 		},
-		successCaption() {
-			const total = Number(this.bbmssn && this.bbmssn.nMssn) || 0
-			const ok = Number(this.bbmssn && this.bbmssn.nMssnOk) || 0
-			return `${ok.toLocaleString()} of ${total.toLocaleString()} missions completed cleanly`
+
+		/**
+		 * Days since the drawer was last emptied — the closest honest proxy for
+		 * "days since the litter was changed" without asking the operator.
+		 *
+		 * @returns {number|null}
+		 */
+		daysSinceEmpty() {
+			const emptied = this.rows.find((c) => c.drawer_after !== null
+				&& c.drawer_after !== undefined
+				&& Number(c.drawer_after) <= DRAWER_EMPTY_PCT)
+			const ts = emptied ? Number(emptied.started_at) : 0
+			if (!ts) {
+				return null
+			}
+			return Math.max(0, Math.floor((Date.now() / 1000 - ts) / 86400))
+		},
+
+		stats() {
+			const dto = this.state || {}
+			const out = []
+			const total = Number(dto.cycles_total)
+			if (Number.isFinite(total)) {
+				out.push({ label: 'Total cycles', value: total.toLocaleString() })
+			}
+			const since = Number(dto.cycles_since_empty)
+			if (Number.isFinite(since)) {
+				out.push({ label: 'Cycles since empty', value: since.toLocaleString() })
+			}
+			if (this.rows.length > 0) {
+				out.push({ label: 'Recorded cycles', value: this.rows.length.toLocaleString() })
+				out.push({ label: 'Drawer empties', value: this.empties.toLocaleString() })
+			}
+			if (this.avgCatWeight !== null) {
+				out.push({ label: 'Avg cat weight', value: catWeightLabel(this.avgCatWeight) })
+			}
+			if (this.daysSinceEmpty !== null) {
+				out.push({
+					label: 'Since last empty',
+					value: this.daysSinceEmpty === 0 ? 'today' : `${this.daysSinceEmpty}d`,
+				})
+			}
+			const uptime = Number(dto.bridge && dto.bridge.uptime_s)
+			if (Number.isFinite(uptime) && uptime > 0) {
+				out.push({ label: 'Bridge uptime', value: durationLabel(uptime) })
+			}
+			return out
+		},
+
+		/** @returns {number|null} whole-percent share of recorded cycles with no fault */
+		faultFreeRate() {
+			if (this.rows.length === 0) {
+				return null
+			}
+			const clean = this.rows.filter((c) => Number(c.error_code || 0) === 0
+				&& String(c.result || '') !== 'fault').length
+			return Math.round((clean / this.rows.length) * 100)
+		},
+		faultFreeCaption() {
+			const clean = this.rows.filter((c) => Number(c.error_code || 0) === 0
+				&& String(c.result || '') !== 'fault').length
+			return `${clean.toLocaleString()} of ${this.rows.length.toLocaleString()} recorded cycles finished without a fault`
 		},
 		donutCirc() {
 			return DONUT_CIRC.toFixed(2)
 		},
 		donutOffset() {
-			const frac = Math.max(0, Math.min(1, (this.successRate || 0) / 100))
+			const frac = Math.max(0, Math.min(1, (this.faultFreeRate || 0) / 100))
 			return (DONUT_CIRC * (1 - frac)).toFixed(2)
 		},
 
@@ -135,14 +173,18 @@ export default {
 			if (!this.showIdentity) {
 				return []
 			}
-			const rows = []
-			if (this.sku) {
-				rows.push({ label: 'Model', value: this.sku })
+			const dto = this.state || {}
+			const out = []
+			if (dto.model) {
+				out.push({ label: 'Model', value: String(dto.model) })
 			}
-			if (this.softwareVersion) {
-				rows.push({ label: 'Firmware', value: this.softwareVersion })
+			if (dto.whisker_device_id) {
+				out.push({ label: 'Whisker id', value: String(dto.whisker_device_id) })
 			}
-			return rows
+			if (dto.wifi_ssid) {
+				out.push({ label: 'Wi-Fi', value: String(dto.wifi_ssid) })
+			}
+			return out
 		},
 	},
 }

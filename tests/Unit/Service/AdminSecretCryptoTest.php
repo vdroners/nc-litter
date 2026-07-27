@@ -96,16 +96,16 @@ class AdminSecretCryptoTest extends TestCase
 	{
 		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
 		$this->assertSame('', $svc->encrypt(''));
-		$svc->set('robot_password', '');
-		$this->assertArrayNotHasKey(Application::APP_ID . ':robot_password', $this->store);
+		$svc->set('whisker_password', '');
+		$this->assertArrayNotHasKey(Application::APP_ID . ':whisker_password', $this->store);
 	}
 
 	public function testSetGetAppConfig(): void
 	{
 		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
-		$svc->set('robot_password', 'abc123');
-		$raw = $this->store[Application::APP_ID . ':robot_password'];
+		$svc->set('whisker_password', 'abc123');
+		$raw = $this->store[Application::APP_ID . ':whisker_password'];
 		$this->assertStringStartsWith(AdminSecretCrypto::PREFIX, $raw);
-		$this->assertSame('abc123', $svc->get('robot_password'));
+		$this->assertSame('abc123', $svc->get('whisker_password'));
 	}
 }

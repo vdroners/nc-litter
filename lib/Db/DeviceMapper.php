@@ -9,16 +9,16 @@ use OCP\AppFramework\Db\QBMapper;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 
-/** @template-extends QBMapper<Robot> */
-class RobotMapper extends QBMapper
+/** @template-extends QBMapper<Device> */
+class DeviceMapper extends QBMapper
 {
 	public function __construct(IDBConnection $db)
 	{
-		parent::__construct($db, 'nc_litter_robots', Robot::class);
+		parent::__construct($db, 'nc_litter_devices', Device::class);
 	}
 
 	/** @throws DoesNotExistException */
-	public function find(int $id): Robot
+	public function find(int $id): Device
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
@@ -27,7 +27,7 @@ class RobotMapper extends QBMapper
 		return $this->findEntity($qb);
 	}
 
-	/** @return Robot[] */
+	/** @return Device[] */
 	public function findAll(): array
 	{
 		$qb = $this->db->getQueryBuilder();
@@ -35,7 +35,7 @@ class RobotMapper extends QBMapper
 		return $this->findEntities($qb);
 	}
 
-	public function findFirst(): ?Robot
+	public function findFirst(): ?Device
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')->from($this->getTableName())->orderBy('id', 'ASC')->setMaxResults(1);

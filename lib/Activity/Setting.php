@@ -22,7 +22,7 @@ class Setting implements ISetting
 
 	public function getName(): string
 	{
-		return $this->l->t('A Litter-Robot mission completes, errors, or needs attention');
+		return $this->l->t('A Litter-Robot cycle completes, faults, or the box needs attention');
 	}
 
 	public function getPriority(): int

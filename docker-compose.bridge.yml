@@ -8,24 +8,23 @@ services:
         required: false
     environment:
       PORT: "8080"
+      # Mock mode returns a canned LR4 state so the app + gates run without a
+      # real Whisker account. Set LITTER_MOCK=0 + creds for a live device.
       LITTER_MOCK: "${LITTER_MOCK:-1}"
-      BLID: "${BLID:-}"
-      PASSWORD: "${PASSWORD:-}"
-      ROBOT_IP: "${ROBOT_IP:-}"
-      FIRMWARE_VERSION: "${FIRMWARE_VERSION:-2}"
-      # Comma-separated /24 bases (or CIDR) to TCP-scan for :8883 when UDP misses.
-      LITTER_DISCOVER_SUBNETS: "${LITTER_DISCOVER_SUBNETS:-10.0.0.0/24}"
-      # Host Soft-AP helper (systemd nc-litter-wifi-helper on :8091).
-      LITTER_WIFI_HELPER_URL: "${LITTER_WIFI_HELPER_URL:-http://host.docker.internal:8091}"
-      LITTER_WIFI_HELPER_TOKEN: "${LITTER_WIFI_HELPER_TOKEN:-}"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Whisker cloud account (pylitterbot). The app stores these encrypted and
+      # the bridge reads them from .env for its own process only. Never commit
+      # real values.
+      WHISKER_EMAIL: "${WHISKER_EMAIL:-}"
+      WHISKER_PASSWORD: "${WHISKER_PASSWORD:-}"
+      # Which device on the account to bind (serial/id); blank = first LR4.
+      LITTER_DEVICE_ID: "${LITTER_DEVICE_ID:-}"
+      # Cloud poll cadence (seconds) when no live push is active.
+      LITTER_REFRESH_S: "${LITTER_REFRESH_S:-30}"
     # Host loopback only for gates/debug — not LAN-public.
     ports:
-      - "127.0.0.1:18791:8080"
+      - "127.0.0.1:18793:8080"
     networks:
       nc-litter-net:
-        # Both spellings resolve so any saved bridge_url keeps working.
         aliases:
           - nc_litter_bridge
           - nc-litter-bridge

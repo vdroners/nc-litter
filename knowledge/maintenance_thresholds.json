@@ -1,51 +1,49 @@
 {
   "thresholds": [
     {
-      "id": "stuck_rate_high",
-      "metric": "nStuck",
-      "per_hours_metric": "hr",
-      "ratio_gt": 2.0,
+      "id": "drawer_level_warn",
+      "metric_state": "drawer_level_pct",
+      "gte": 90,
       "severity": "warn",
-      "title": "Elevated stuck events",
-      "detail": "Stuck count is high relative to run hours.",
-      "action": "Clear clutter, check cliff sensors, inspect wheels."
+      "title": "Waste drawer filling up",
+      "detail": "The drawer is nearly full. A tidy household empties it before it insists.",
+      "action": "Empty the waste drawer at your next convenience and seat a fresh liner."
     },
     {
-      "id": "scrub_rate_high",
-      "metric": "nScrubs",
-      "per_hours_metric": "hr",
-      "ratio_gt": 5.0,
+      "id": "drawer_level_danger",
+      "metric_state": "drawer_level_pct",
+      "gte": 98,
+      "severity": "danger",
+      "title": "Waste drawer full",
+      "detail": "The drawer has reached capacity. Alfred will decline to cycle until it is emptied.",
+      "action": "Empty the waste drawer now, fit a new liner, and slide it home until it clicks."
+    },
+    {
+      "id": "litter_level_warn",
+      "metric_state": "litter_level_pct",
+      "lte": 20,
+      "severity": "warn",
+      "title": "Litter running low",
+      "detail": "The globe is getting light on litter. A modest top-up keeps every cycle clean.",
+      "action": "Add fresh clumping litter up to the fill line inside the globe."
+    },
+    {
+      "id": "litter_level_danger",
+      "metric_state": "litter_level_pct",
+      "lte": 8,
+      "severity": "danger",
+      "title": "Litter critically low",
+      "detail": "There is barely enough litter for a proper cycle. Your companion deserves better footing.",
+      "action": "Refill the globe with fresh litter to the fill line before the next visit."
+    },
+    {
+      "id": "cycles_since_empty_info",
+      "metric_state": "cycles_since_empty",
+      "gte": 40,
       "severity": "info",
-      "title": "Frequent scrubs",
-      "detail": "Robot is scrubbing often (debris / carpet edges).",
-      "action": "Vacuum edges manually; check extractors."
-    },
-    {
-      "id": "high_hours",
-      "metric": "hr",
-      "gte": 200,
-      "severity": "info",
-      "title": "High lifetime run hours",
-      "detail": "Alfred has substantial run time.",
-      "action": "Inspect brushes, casters, and filter; replace wear parts as needed."
-    },
-    {
-      "id": "bin_full_hint",
-      "metric_state": "bin",
-      "equals": "full",
-      "severity": "warn",
-      "title": "Bin full",
-      "detail": "Dust bin reports full.",
-      "action": "Empty the bin before the next mission."
-    },
-    {
-      "id": "low_battery_hint",
-      "metric_state": "battery_pct",
-      "lte": 15,
-      "severity": "warn",
-      "title": "Low battery",
-      "detail": "Battery below 15%.",
-      "action": "Dock Alfred to charge."
+      "title": "Several cycles since the last empty",
+      "detail": "Alfred has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.",
+      "action": "Consider emptying the waste drawer and starting the count fresh."
     }
   ]
 }

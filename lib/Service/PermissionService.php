@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace OCA\NcLitter\Service;
 
 use OCA\NcLitter\Exception\ForbiddenException;
-use OCA\NcLitter\Util\Litter-RobotGroupAccess;
+use OCA\NcLitter\Util\LitterGroupAccess;
 use OCP\IConfig;
 use OCP\IGroupManager;
 use OCP\IUser;
@@ -41,10 +41,10 @@ class PermissionService
 			if ($this->groupManager->isAdmin($uid)) {
 				return true;
 			}
-			$groupId = Litter-RobotGroupAccess::operatorGroupId($this->config);
+			$groupId = LitterGroupAccess::operatorGroupId($this->config);
 			return $this->groupManager->isInGroup($uid, $groupId);
 		}
-		return Litter-RobotGroupAccess::hasAccess($this->userSession, $this->groupManager, $this->config);
+		return LitterGroupAccess::hasAccess($this->userSession, $this->groupManager, $this->config);
 	}
 
 	/**
@@ -54,7 +54,7 @@ class PermissionService
 	{
 		$user = $this->requireUser();
 		if (!$this->canUseApp($user)) {
-			throw new ForbiddenException(Litter-RobotGroupAccess::FORBIDDEN_MESSAGE);
+			throw new ForbiddenException(LitterGroupAccess::FORBIDDEN_MESSAGE);
 		}
 		return $user;
 	}
@@ -80,6 +80,6 @@ class PermissionService
 	/** @return array{error: string, message: string} */
 	public function forbiddenJsonPayload(): array
 	{
-		return Litter-RobotGroupAccess::forbiddenJsonPayload();
+		return LitterGroupAccess::forbiddenJsonPayload();
 	}
 }

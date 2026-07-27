@@ -1,103 +1,115 @@
 /**
  * Nextcloud API wrappers.
  *
- * The browser never talks to the bridge or the robot: every call here hits the
- * `nc_litter` PHP app, which enforces the operator ACL, audits the command and
- * proxies to the bridge over the Docker network. Route shapes are declared in
- * `appinfo/routes.php`.
+ * The browser never talks to the bridge or the Whisker cloud: every call here
+ * hits the `nc_litter` PHP app, which enforces the operator ACL, audits the
+ * command and proxies to the bridge over the Docker network. Route shapes are
+ * declared in `appinfo/routes.php` — this file is a 1:1 mirror of it.
  */
 
 import axios from '@nextcloud/axios'
 import { generateUrl } from '@nextcloud/router'
 
-/** Schema is multi-robot; v0.x ships a single primary robot id. */
-export const DEFAULT_ROBOT_ID = 1
+/** Schema is multi-device; v0.x ships a single primary device row (id 1). */
+export const DEFAULT_DEVICE_ID = 1
 
 const base = () => generateUrl('/apps/nc_litter')
 
 /**
- * @param {number} [robotId]
- * @returns {Promise<object>} enriched state DTO (decoded_error, connection_health, next_scheduled)
+ * Enriched live state: the bridge DTO plus device identity, `decoded_error`,
+ * `connection_health`, `cycles_since_empty` and `maintenance_hints`.
+ *
+ * @param {number} [deviceId] app device row id
+ * @returns {Promise<object>} enriched state DTO
  */
-export async function getState(robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.get(`${base()}/api/robots/${robotId}/state`)
+export async function getState(deviceId = DEFAULT_DEVICE_ID) {
+	const { data } = await axios.get(`${base()}/api/devices/${deviceId}/state`)
 	return data
 }
 
 /**
  * SSE endpoint for the live pipeline. Returned as a URL (not an EventSource) so
- * the store owns the connection lifecycle and the poll fallback.
+ * the store owns the connection lifecycle and the poll fallback. The stream
+ * emits `event: state` frames whose data is the same DTO as {@link getState}.
  *
- * @param {number} [robotId]
- * @returns {string} absolute URL
+ * @param {number} [deviceId]
+ * @returns {string} URL
  */
-export function streamUrl(robotId = DEFAULT_ROBOT_ID) {
-	return `${base()}/api/robots/${robotId}/stream`
+export function streamUrl(deviceId = DEFAULT_DEVICE_ID) {
+	return `${base()}/api/devices/${deviceId}/stream`
 }
 
 /**
- * @param {string} action clean|spot|pause|resume|stop|dock|find
- * @param {number} [robotId]
+ * Run one operator command. Names are `[a-z_]+` and must be in the server's
+ * ALLOWED_ACTIONS: clean, empty, reset_drawer, sleep_on, sleep_off,
+ * night_light_on, night_light_off, panel_lock_on, panel_lock_off, power_on,
+ * power_off, set_wait_time.
+ *
+ * @param {string} name action name
+ * @param {number} [deviceId]
+ * @param {object} [params] extra body — `{ wait_time: 7 }` for set_wait_time
  * @returns {Promise<object>} action result (audited server-side)
  */
-export async function postAction(action, robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.post(`${base()}/api/robots/${robotId}/action/${action}`)
+export async function postAction(name, deviceId = DEFAULT_DEVICE_ID, params = {}) {
+	const { data } = await axios.post(
+		`${base()}/api/devices/${deviceId}/action/${name}`,
+		params && typeof params === 'object' ? params : {},
+	)
 	return data
 }
 
 /**
- * @param {number} [robotId]
- * @returns {Promise<object[]>} mission history rows, newest first
+ * @param {number} [deviceId]
+ * @param {object} [options]
+ * @param {number} [options.limit]
+ * @param {number} [options.offset]
+ * @returns {Promise<object[]>} cycle history rows, newest first
  */
-export async function getMissions(robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.get(`${base()}/api/missions`, { params: { robot_id: robotId } })
-	return data.items || data.missions || []
+export async function getCycles(deviceId = DEFAULT_DEVICE_ID, { limit = 50, offset = 0 } = {}) {
+	const { data } = await axios.get(`${base()}/api/cycles`, {
+		params: { device_id: deviceId, limit, offset },
+	})
+	return data.items || []
 }
 
 /**
- * @param {number} id mission id
- * @returns {Promise<object>} mission detail incl. phase events
+ * @param {number} id cycle row id
+ * @returns {Promise<object>} cycle detail incl. `events` + `telemetry`
  */
-export async function getMission(id) {
-	const { data } = await axios.get(`${base()}/api/missions/${id}`)
+export async function getCycle(id) {
+	const { data } = await axios.get(`${base()}/api/cycles/${id}`)
 	return data
 }
 
 /**
  * @param {'csv'|'json'} format
- * @param {number} [robotId]
+ * @param {number} [deviceId]
  * @returns {string} download URL (plain link so the browser handles the save)
  */
-export function exportMissionsUrl(format, robotId = DEFAULT_ROBOT_ID) {
-	return `${base()}/api/missions/export?format=${encodeURIComponent(format)}&robot_id=${robotId}`
+export function exportCyclesUrl(format, deviceId = DEFAULT_DEVICE_ID) {
+	return `${base()}/api/cycles/export?format=${encodeURIComponent(format)}&device_id=${deviceId}`
 }
 
 /**
- * @param {number} [robotId]
- * @returns {Promise<object>} dorita980 week shape (index 0 = Sunday)
+ * The four LR4 settings the app manages: `night_light`, `panel_lock`,
+ * `wait_time` and `sleep`.
+ *
+ * @param {number} [deviceId]
+ * @returns {Promise<object>} settings block
  */
-export async function getSchedule(robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.get(`${base()}/api/robots/${robotId}/schedule`)
-	return data.week || data
+export async function getSettings(deviceId = DEFAULT_DEVICE_ID) {
+	const { data } = await axios.get(`${base()}/api/devices/${deviceId}/settings`)
+	return data.settings || {}
 }
 
 /**
- * @param {object} week `{ cycle[7], h[7], m[7] }`
- * @param {number} [robotId]
- * @returns {Promise<object>} week after the write
+ * @param {object} settings patch — only present keys are applied
+ * @param {number} [deviceId]
+ * @returns {Promise<object>} settings after the write
  */
-export async function setSchedule(week, robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.put(`${base()}/api/robots/${robotId}/schedule`, { week })
-	return data.week || data
-}
-
-/**
- * @param {number} [robotId]
- * @returns {Promise<object>} carpet boost / edge / passes / always-finish
- */
-export async function getPreferences(robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.get(`${base()}/api/robots/${robotId}/preferences`)
-	return data.preferences || data
+export async function setSettings(settings, deviceId = DEFAULT_DEVICE_ID) {
+	const { data } = await axios.put(`${base()}/api/devices/${deviceId}/settings`, { settings })
+	return data.settings || {}
 }
 
 /**
@@ -111,34 +123,19 @@ export async function getAlfredAlerts() {
 }
 
 /**
- * @param {object} preferences preference patch
- * @param {number} [robotId]
- * @returns {Promise<object>} preferences after the write
+ * Re-bind the bridge with the stored Whisker credentials.
+ *
+ * @param {number} [deviceId]
+ * @returns {Promise<object>} connect result (`connected`, `mock`, `error`)
  */
-export async function setPreferences(preferences, robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.put(`${base()}/api/robots/${robotId}/preferences`, { preferences })
-	return data.preferences || data
-}
-
-/**
- * @param {number} [robotId]
- * @returns {Promise<object>} bridge connect result, incl. `conflict` when the session is taken
- */
-export async function connectTest(robotId = DEFAULT_ROBOT_ID) {
-	const { data } = await axios.post(`${base()}/api/robots/${robotId}/connect-test`)
+export async function connectTest(deviceId = DEFAULT_DEVICE_ID) {
+	const { data } = await axios.post(`${base()}/api/devices/${deviceId}/connect-test`)
 	return data
 }
 
 /**
- * @returns {Promise<object>} LAN discovery candidates
- */
-export async function discover() {
-	const { data } = await axios.post(`${base()}/api/robots/discover`)
-	return data
-}
-
-/**
- * @returns {Promise<object>} admin settings (robot, retention, bridge URL, operator group)
+ * @returns {Promise<object>} admin bootstrap (device, retention, bridge URL,
+ *   operator group, alfred, allowed_actions)
  */
 export async function getAdminSettings() {
 	const { data } = await axios.get(`${base()}/api/admin/settings`)
@@ -155,52 +152,43 @@ export async function saveAdminSettings(cfg) {
 }
 
 /**
- * Hold-HOME credential retrieval (admin onboarding step 2).
+ * Onboarding step 1: authenticate to the Whisker cloud and list the LR4s on the
+ * account. Nothing is persisted — the operator picks a unit next.
  *
- * @param {{ ip: string }} payload
- * @returns {Promise<object>} `{ blid, password }` or an explicit error
+ * @param {string} email Whisker account e-mail
+ * @param {string} password Whisker account password (never stored client-side)
+ * @returns {Promise<{ok:boolean,devices:object[],error:?string}>}
  */
-export async function onboard(payload) {
-	const { data } = await axios.post(`${base()}/api/admin/onboard`, payload)
+export async function onboardLogin(email, password) {
+	const { data } = await axios.post(`${base()}/api/admin/onboard/login`, { email, password })
 	return data
 }
 
 /**
- * Scan for Litter-Robot Soft-AP SSIDs via the host wifi-helper.
- *
- * @param {{ litter_only?: boolean }} [payload]
- * @returns {Promise<object>}
- */
-export async function softapScan(payload = { litter_only: true }) {
-	const { data } = await axios.post(`${base()}/api/admin/setup/softap-scan`, payload)
-	return data
-}
-
-/**
- * Factory Soft-AP provision (home Wi-Fi + local MQTT credentials).
+ * Onboarding step 2: persist the chosen unit (password encrypted `enc:v1:` at
+ * rest) and bind it on the bridge.
  *
  * @param {object} payload
+ * @param {string} payload.email
+ * @param {string} payload.password
+ * @param {string} payload.deviceId Whisker-side device id
+ * @param {string} [payload.name] display nickname
  * @returns {Promise<object>}
  */
-export async function softapSetup(payload) {
-	const { data } = await axios.post(`${base()}/api/admin/setup/softap`, payload, {
-		timeout: 240000,
+export async function onboardSelect({ email, password, deviceId, name = '' }) {
+	const { data } = await axios.post(`${base()}/api/admin/onboard/select`, {
+		email,
+		password,
+		device_id: deviceId,
+		name,
 	})
-	return data
-}
-
-/**
- * @returns {Promise<object>} bridge Soft-AP job status
- */
-export async function softapStatus() {
-	const { data } = await axios.get(`${base()}/api/admin/setup/status`)
 	return data
 }
 
 /**
  * @returns {Promise<object>} prune candidates without deleting anything
  */
-export async function retentionPreview() {
+export async function retentionDryRun() {
 	const { data } = await axios.post(`${base()}/api/admin/retention/dry-run`)
 	return data
 }

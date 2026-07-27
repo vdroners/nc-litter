@@ -15,7 +15,7 @@ use OCP\IUserSession;
 /**
  * Shared admin-or-litter-operators access gate.
  */
-final class Litter-RobotGroupAccess
+final class LitterGroupAccess
 {
 	public const FORBIDDEN_MESSAGE = 'Access restricted to administrators or litter-operators group members.';
 

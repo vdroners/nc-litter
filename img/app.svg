@@ -1,13 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="NC Roomba">
-  <!-- Charcoal disc (robot body) -->
-  <circle cx="50" cy="50" r="44" fill="#1a1a1c"/>
-  <!-- Brass HOME ring -->
-  <circle cx="50" cy="50" r="38" fill="none" stroke="#C4A574" stroke-width="3.5"/>
-  <circle cx="50" cy="50" r="30" fill="none" stroke="#C4A574" stroke-width="1.25" stroke-opacity="0.55"/>
-  <!-- Soft cream face plate -->
-  <circle cx="50" cy="50" r="22" fill="#F2E8D5"/>
-  <!-- HOME button (house) -->
-  <path fill="#1a1a1c" d="M50 36 L62 46 V60 H54 V52 H46 V60 H38 V46 Z"/>
-  <!-- Subtle bumper highlight -->
-  <path d="M28 62 Q50 72 72 62" fill="none" stroke="#C4A574" stroke-width="2" stroke-linecap="round" stroke-opacity="0.7"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="NC Litter">
+  <!-- Cat + litter box. Two tones only (charcoal silhouette, tabby accent) so
+       the glyph still reads at 16px in the Nextcloud app launcher. -->
+  <g fill="none" stroke="none">
+    <!-- Ears -->
+    <path fill="#1a1a1c" d="M30 30 L26 6 L48 20 Z"/>
+    <path fill="#1a1a1c" d="M70 30 L74 6 L52 20 Z"/>
+    <!-- Head -->
+    <circle cx="50" cy="38" r="23" fill="#1a1a1c"/>
+    <!-- Eyes -->
+    <circle cx="41" cy="35" r="3.6" fill="#d8a45e"/>
+    <circle cx="59" cy="35" r="3.6" fill="#d8a45e"/>
+    <!-- Muzzle -->
+    <path d="M50 43 v4 M50 47 q-5 4 -9 1 M50 47 q5 4 9 1" stroke="#d8a45e" stroke-width="2.6" stroke-linecap="round"/>
+    <!-- Litter tray -->
+    <path fill="#1a1a1c" d="M10 62 H90 a4 4 0 0 1 4 4 l-5 20 a6 6 0 0 1 -6 5 H17 a6 6 0 0 1 -6 -5 L6 66 a4 4 0 0 1 4 -4 Z"/>
+    <!-- Litter granules -->
+    <circle cx="30" cy="76" r="3.2" fill="#d8a45e"/>
+    <circle cx="44" cy="80" r="2.4" fill="#d8a45e"/>
+    <circle cx="58" cy="75" r="2.8" fill="#d8a45e"/>
+    <circle cx="70" cy="80" r="2.2" fill="#d8a45e"/>
+    <!-- Tail curling out of the tray -->
+    <path d="M88 66 q12 -8 6 -20" stroke="#d8a45e" stroke-width="5" stroke-linecap="round" fill="none"/>
+  </g>
 </svg>

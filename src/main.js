@@ -23,7 +23,9 @@ Vue.config.errorHandler = (err, vm, info) => {
 	// eslint-disable-next-line no-console
 	console.error(`[nc_litter] render error in <${name}> (${info}):`, err)
 	try {
-		const log = (window.__ncLitter-RobotErrors = window.__ncLitter-RobotErrors || [])
+		// A bad identifier here used to be a hard parse error (the rename left
+		// `window.__ncLitter-RobotErrors`, which is a subtraction, not a target).
+		const log = (window.__ncLitterErrors = window.__ncLitterErrors || [])
 		log.push({ component: name, info, message: (err && err.message) || String(err) })
 		if (log.length > 20) {
 			log.shift()

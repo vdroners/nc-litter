@@ -8,85 +8,85 @@ use JsonSerializable;
 use OCP\AppFramework\Db\Entity;
 
 /**
- * @method int getRobotId()
- * @method void setRobotId(int $robotId)
- * @method int|null getMissionId()
- * @method void setMissionId(?int $missionId)
+ * @method int getDeviceId()
+ * @method void setDeviceId(int $deviceId)
+ * @method int|null getCycleId()
+ * @method void setCycleId(?int $cycleId)
  * @method int getTs()
  * @method void setTs(int $ts)
- * @method int|null getBatteryPct()
- * @method void setBatteryPct(?int $batteryPct)
- * @method string|null getBinStatus()
- * @method void setBinStatus(?string $binStatus)
- * @method string|null getPhase()
- * @method void setPhase(?string $phase)
- * @method string|null getCycle()
- * @method void setCycle(?string $cycle)
+ * @method string|null getStatus()
+ * @method void setStatus(?string $status)
+ * @method int|null getDrawerLevelPct()
+ * @method void setDrawerLevelPct(?int $drawerLevelPct)
+ * @method int|null getLitterLevelPct()
+ * @method void setLitterLevelPct(?int $litterLevelPct)
+ * @method float|null getCatWeight()
+ * @method void setCatWeight(?float $catWeight)
+ * @method int|null getCycleCount()
+ * @method void setCycleCount(?int $cycleCount)
+ * @method int|null getSleeping()
+ * @method void setSleeping(?int $sleeping)
+ * @method int|null getNightLight()
+ * @method void setNightLight(?int $nightLight)
+ * @method int|null getPanelLock()
+ * @method void setPanelLock(?int $panelLock)
  * @method int|null getRssi()
  * @method void setRssi(?int $rssi)
  * @method int getErrorCode()
  * @method void setErrorCode(int $errorCode)
- * @method int getNotReady()
- * @method void setNotReady(int $notReady)
- * @method float|null getPoseX()
- * @method void setPoseX(?float $poseX)
- * @method float|null getPoseY()
- * @method void setPoseY(?float $poseY)
- * @method float|null getPoseTheta()
- * @method void setPoseTheta(?float $poseTheta)
  * @method string|null getPayloadJson()
  * @method void setPayloadJson(?string $payloadJson)
  */
 class TelemetrySample extends Entity implements JsonSerializable
 {
-	protected $robotId;
-	protected $missionId;
+	protected $deviceId;
+	protected $cycleId;
 	protected $ts;
-	protected $batteryPct;
-	protected $binStatus;
-	protected $phase;
-	protected $cycle;
+	protected $status;
+	protected $drawerLevelPct;
+	protected $litterLevelPct;
+	protected $catWeight;
+	protected $cycleCount;
+	protected $sleeping;
+	protected $nightLight;
+	protected $panelLock;
 	protected $rssi;
 	protected $errorCode;
-	protected $notReady;
-	protected $poseX;
-	protected $poseY;
-	protected $poseTheta;
 	protected $payloadJson;
 
 	public function __construct()
 	{
-		$this->addType('robotId', 'integer');
-		$this->addType('missionId', 'integer');
+		$this->addType('deviceId', 'integer');
+		$this->addType('cycleId', 'integer');
 		$this->addType('ts', 'integer');
-		$this->addType('batteryPct', 'integer');
+		$this->addType('drawerLevelPct', 'integer');
+		$this->addType('litterLevelPct', 'integer');
+		$this->addType('catWeight', 'float');
+		$this->addType('cycleCount', 'integer');
+		$this->addType('sleeping', 'integer');
+		$this->addType('nightLight', 'integer');
+		$this->addType('panelLock', 'integer');
 		$this->addType('rssi', 'integer');
 		$this->addType('errorCode', 'integer');
-		$this->addType('notReady', 'integer');
-		$this->addType('poseX', 'float');
-		$this->addType('poseY', 'float');
-		$this->addType('poseTheta', 'float');
 	}
 
 	public function jsonSerialize(): array
 	{
 		return [
 			'id' => (int) $this->id,
-			'robot_id' => (int) $this->robotId,
-			'mission_id' => $this->missionId !== null ? (int) $this->missionId : null,
+			'device_id' => (int) $this->deviceId,
+			'cycle_id' => $this->cycleId !== null ? (int) $this->cycleId : null,
 			'ts' => (int) $this->ts,
-			'battery_pct' => $this->batteryPct !== null ? (int) $this->batteryPct : null,
-			'bin' => $this->binStatus,
-			'phase' => $this->phase,
-			'cycle' => $this->cycle,
+			'status' => $this->status,
+			'drawer_level_pct' => $this->drawerLevelPct !== null ? (int) $this->drawerLevelPct : null,
+			'litter_level_pct' => $this->litterLevelPct !== null ? (int) $this->litterLevelPct : null,
+			'cat_weight' => $this->catWeight !== null ? (float) $this->catWeight : null,
+			'cycle_count' => $this->cycleCount !== null ? (int) $this->cycleCount : null,
+			'sleeping' => $this->sleeping !== null ? (bool) $this->sleeping : null,
+			'night_light' => $this->nightLight !== null ? (bool) $this->nightLight : null,
+			'panel_lock' => $this->panelLock !== null ? (bool) $this->panelLock : null,
 			'rssi' => $this->rssi !== null ? (int) $this->rssi : null,
-			'error' => (int) $this->errorCode,
-			'not_ready' => (int) $this->notReady,
-			'pose' => [
-				'x' => $this->poseX,
-				'y' => $this->poseY,
-				'theta' => $this->poseTheta,
-			],
+			'error_code' => (int) $this->errorCode,
 		];
 	}
 }

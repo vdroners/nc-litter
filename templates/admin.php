@@ -1,7 +1,7 @@
 <?php
 /** @var array $_ */
-$robot = is_array($_['robot'] ?? null) ? $_['robot'] : null;
-$homeWifi = is_array($_['home_wifi'] ?? null) ? $_['home_wifi'] : null;
+$device = is_array($_['device'] ?? null) ? $_['device'] : null;
+$alfred = is_array($_['alfred'] ?? null) ? $_['alfred'] : null;
 
 // Everything the admin panel needs on first paint, so it renders before the
 // GET /api/admin/settings round-trip finishes.
@@ -9,16 +9,17 @@ $config = [
 	'bridge_url' => (string)($_['bridge_url'] ?? ''),
 	'operator_group' => (string)($_['operator_group'] ?? 'litter-operators'),
 	'retention_days' => (int)($_['retention_days'] ?? 365),
-	'robot' => $robot,
-	'home_wifi' => $homeWifi,
+	'device' => $device,
+	'alfred' => $alfred,
 ];
 ?>
 <div id="nc-litter-admin" class="section">
 	<h2>NC Litter</h2>
 	<p>
-		Factory Soft-AP setup joins a Litter-Robot (960/980 Soft-AP class) to your home Wi‑Fi
-		from this host without the iRobot app, then opens local MQTT. Give the robot a
-		DHCP reservation — the local API is reached by IP, so a moving lease breaks the bridge.
+		Sign in with the Whisker account that owns your Litter-Robot 4, pick the unit,
+		and the bridge binds it over the Whisker cloud. The account password is stored
+		encrypted and is never sent to the browser. State is cloud-polled, so readings
+		lag a live local link by up to a minute.
 	</p>
 
 	<!-- Mounted by src/admin-settings.js (js/nc_litter-admin.js). -->
@@ -33,5 +34,5 @@ $config = [
 		</p>
 	</noscript>
 
-	<p>See <code>docs/OPERATOR.md</code> for Soft-AP factory setup and hold-HOME fallback.</p>
+	<p>See <code>docs/OPERATOR.md</code> for Whisker onboarding and bridge troubleshooting.</p>
 </div>

@@ -9,16 +9,16 @@ use OCP\AppFramework\Db\QBMapper;
 use OCP\DB\QueryBuilder\IQueryBuilder;
 use OCP\IDBConnection;
 
-/** @template-extends QBMapper<Mission> */
-class MissionMapper extends QBMapper
+/** @template-extends QBMapper<Cycle> */
+class CycleMapper extends QBMapper
 {
 	public function __construct(IDBConnection $db)
 	{
-		parent::__construct($db, 'nc_litter_missions', Mission::class);
+		parent::__construct($db, 'nc_litter_cycles', Cycle::class);
 	}
 
 	/** @throws DoesNotExistException */
-	public function find(int $id): Mission
+	public function find(int $id): Cycle
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
@@ -27,25 +27,25 @@ class MissionMapper extends QBMapper
 		return $this->findEntity($qb);
 	}
 
-	/** @return Mission[] */
-	public function findByRobot(int $robotId, int $limit = 50, int $offset = 0): array
+	/** @return Cycle[] */
+	public function findByDevice(int $deviceId, int $limit = 50, int $offset = 0): array
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from($this->getTableName())
-			->where($qb->expr()->eq('robot_id', $qb->createNamedParameter($robotId, IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
 			->orderBy('started_at', 'DESC')
 			->setMaxResults(max(1, min(500, $limit)))
 			->setFirstResult(max(0, $offset));
 		return $this->findEntities($qb);
 	}
 
-	public function findOpenMission(int $robotId): ?Mission
+	public function findOpenCycle(int $deviceId): ?Cycle
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')
 			->from($this->getTableName())
-			->where($qb->expr()->eq('robot_id', $qb->createNamedParameter($robotId, IQueryBuilder::PARAM_INT)))
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
 			->andWhere($qb->expr()->isNull('ended_at'))
 			->orderBy('started_at', 'DESC')
 			->setMaxResults(1);
@@ -56,7 +56,7 @@ class MissionMapper extends QBMapper
 		}
 	}
 
-	/** @return Mission[] */
+	/** @return Cycle[] */
 	public function findEndedBefore(int $cutoffTs, int $limit = 500): array
 	{
 		$qb = $this->db->getQueryBuilder();

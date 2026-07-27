@@ -1,51 +1,34 @@
 <template>
 	<div class="nc-litter-panel nc-litter-admin">
-		<h3>{{ cfg.name || 'Litter-Robot' }}</h3>
+		<h3>{{ cfg.name || 'Litter-Robot 4' }}</h3>
 		<p class="nc-litter-muted">
-			Factory Soft-AP setup joins the robot to your home Wi‑Fi from this host, then opens
-			local MQTT. Give the robot a DHCP reservation so the LAN IP stays stable. Passwords
-			are stored encrypted.
+			NC Litter reaches the Litter-Robot 4 through the Whisker cloud: the bridge signs in
+			with the account credentials, then polls state and forwards commands. Onboard the
+			account first, then tune the app-side configuration below.
 		</p>
 
-		<SetupWizard
+		<WhiskerSetup
 			:config="wizardConfig"
 			:busy="busy"
 			@busy="busy = $event"
 			@report="report"
-			@applied="onWizardApplied"
-			@discover="scan"
+			@applied="onOnboarded"
 			@test="test" />
 
-		<details class="nc-litter-admin__advanced" open>
-			<summary>Recommended if already on Wi‑Fi — Auto discover &amp; hold-HOME</summary>
-
-			<NcNoteCard type="success">
-				If the robot is already on your home Wi‑Fi, this is the reliable, app-free way to
-				connect: <strong>Auto discover</strong>, then hold the robot's <strong>HOME</strong>
-				button until it beeps and click <strong>Retrieve credentials (hold HOME)</strong>. It
-				pulls the robot's local MQTT password (never your iRobot login), stores it encrypted,
-				and connects. Give the robot a DHCP reservation so its IP stays stable.
-			</NcNoteCard>
-
+		<fieldset class="nc-litter-fieldset">
+			<legend>Device &amp; app configuration</legend>
 			<div class="nc-litter-admin__grid">
 				<label>
 					Display name
-					<input v-model="cfg.name" type="text">
+					<input v-model="cfg.name" type="text" placeholder="Alfred">
 				</label>
 				<label>
-					LAN IP
-					<input v-model="cfg.host" type="text" placeholder="192.168.1.50">
+					Whisker account
+					<input :value="cfg.account_email" type="text" disabled placeholder="(set during onboarding)">
 				</label>
 				<label>
-					BLID
-					<input v-model="cfg.blid" type="text">
-				</label>
-				<label>
-					Local password
-					<input
-						v-model="cfg.password"
-						type="password"
-						:placeholder="passwordSet ? '(stored encrypted — leave blank to keep)' : ''">
+					Whisker device id
+					<input :value="cfg.whisker_device_id" type="text" disabled placeholder="(set during onboarding)">
 				</label>
 				<label>
 					Bridge URL
@@ -53,21 +36,19 @@
 				</label>
 				<label>
 					Operator group
-					<input v-model="cfg.operator_group" type="text">
+					<input v-model="cfg.operator_group" type="text" placeholder="litter-operators">
 				</label>
 				<label>
 					Retention (days)
 					<input v-model.number="cfg.retention_days" type="number" min="0">
 				</label>
 			</div>
+			<p class="nc-litter-muted">
+				The account e-mail and device id are written by onboarding; the password is stored
+				encrypted (<code>enc:v1:</code>) and never returned to the browser.
+			</p>
 
 			<div class="nc-litter-actions">
-				<NcButton :disabled="!!busy" @click="scan">
-					{{ busy === 'discover' ? 'Scanning…' : 'Auto discover' }}
-				</NcButton>
-				<NcButton :disabled="!!busy" @click="retrieve">
-					{{ busy === 'onboard' ? 'Retrieving…' : 'Retrieve credentials (hold HOME)' }}
-				</NcButton>
 				<NcButton type="primary" :disabled="!!busy" @click="save">
 					{{ busy === 'save' ? 'Saving…' : 'Save' }}
 				</NcButton>
@@ -75,23 +56,12 @@
 					{{ busy === 'connect' ? 'Connecting…' : 'Test connection' }}
 				</NcButton>
 			</div>
-
-			<ul v-if="candidates.length" class="nc-litter-list">
-				<li v-for="candidate in candidates" :key="candidate.ip">
-					<button type="button" @click="use(candidate)">
-						<span class="nc-litter-list__title">{{ candidate.robotname || 'Litter-Robot' }} — {{ candidate.ip }}</span>
-						<span class="nc-litter-list__meta">
-							{{ candidate.sku || 'unknown SKU' }}<span v-if="candidate.blid"> · BLID {{ candidate.blid }}</span>
-						</span>
-					</button>
-				</li>
-			</ul>
-		</details>
+		</fieldset>
 
 		<fieldset class="nc-litter-fieldset">
 			<legend>Retention</legend>
 			<p class="nc-litter-muted">
-				Missions, phase events and telemetry samples older than the retention window are
+				Cycles, status events and telemetry samples older than the retention window are
 				pruned by a background job. Preview first — apply deletes rows.
 			</p>
 			<div class="nc-litter-actions">
@@ -109,8 +79,8 @@
 			<legend>Alfred assistant (OpenClaw)</legend>
 			<p class="nc-litter-muted">
 				Optional. When enabled, the Dashboard shows an “Ask Alfred” card that links to
-				the Talk room and mirrors recent <code>[litter]</code> alerts. Alfred controls the
-				robot from Talk as the <code>alfred</code> operator (see the litter OpenClaw skill).
+				the Talk room and mirrors recent <code>[litter]</code> alerts. Alfred drives the
+				unit from Talk as the <code>alfred</code> operator (see the litter OpenClaw skill).
 			</p>
 			<label class="nc-litter-admin__check">
 				<input v-model="alfred.enabled" type="checkbox">
@@ -134,8 +104,11 @@
 <script>
 import { NcButton, NcNoteCard } from '@nextcloud/vue'
 
-import SetupWizard from '../components/SetupWizard.vue'
+import WhiskerSetup from '../components/WhiskerSetup.vue'
 import * as api from '../services/api.js'
+
+/** Tables the retention job prunes, in the order the summary reads best. */
+const PRUNE_KEYS = ['cycles', 'cycle_events', 'telemetry_samples', 'audits']
 
 /**
  * @param {object} result retention dry-run / apply response
@@ -143,18 +116,19 @@ import * as api from '../services/api.js'
  * @returns {string} one-line summary
  */
 function summarizePrune(result, verb) {
-	const counts = result && typeof result === 'object' ? (result.counts || result) : {}
-	const parts = ['missions', 'phase_events', 'telemetry_samples', 'audits']
+	const body = result && typeof result === 'object' ? (result.preview || result.result || result) : {}
+	const counts = body && typeof body === 'object' ? (body.counts || body) : {}
+	const parts = PRUNE_KEYS
 		.filter((key) => counts[key] !== undefined)
 		.map((key) => `${counts[key]} ${key.replace(/_/g, ' ')}`)
-	const cutoff = result && result.cutoff ? ` (older than ${result.cutoff})` : ''
+	const cutoff = body && body.cutoff ? ` (older than ${body.cutoff})` : ''
 	return parts.length ? `${verb} ${parts.join(', ')}${cutoff}` : `${verb} nothing${cutoff}`
 }
 
 export default {
 	name: 'AdminSettingsView',
 
-	components: { NcButton, NcNoteCard, SetupWizard },
+	components: { NcButton, NcNoteCard, WhiskerSetup },
 
 	props: {
 		/** Server-rendered config from the admin template's dataset. */
@@ -165,27 +139,22 @@ export default {
 	},
 
 	data() {
-		const robot = this.config.robot || {}
-		const home = this.config.home_wifi || {}
+		const device = this.config.device || {}
 		return {
-			robotId: robot.id || api.DEFAULT_ROBOT_ID,
-			passwordSet: Boolean(robot.has_password || robot.password_set),
+			deviceId: device.id || api.DEFAULT_DEVICE_ID,
+			hasCreds: Boolean(device.has_creds || device.creds_set),
 			busy: null,
 			status: '',
 			statusType: 'success',
-			/** @type {object[]} LAN discovery candidates */
-			candidates: [],
 			retention: '',
-			homeWifi: home,
 			alfred: {
 				enabled: Boolean((this.config.alfred || {}).enabled),
 				talk_room: (this.config.alfred || {}).talk_room || '',
 			},
 			cfg: {
-				name: robot.name || 'Litter-Robot',
-				host: robot.host || '',
-				blid: robot.blid || '',
-				password: '',
+				name: device.name || 'Alfred',
+				account_email: device.account_email || '',
+				whisker_device_id: device.device_id || device.whisker_device_id || '',
 				bridge_url: this.config.bridge_url || '',
 				operator_group: this.config.operator_group || 'litter-operators',
 				retention_days: this.config.retention_days ?? 365,
@@ -194,45 +163,42 @@ export default {
 	},
 
 	computed: {
+		/** What WhiskerSetup needs to pre-fill its login step. */
 		wizardConfig() {
 			return {
-				robot: {
-					id: this.robotId,
+				device: {
+					id: this.deviceId,
 					name: this.cfg.name,
-					host: this.cfg.host,
-					blid: this.cfg.blid,
-					has_password: this.passwordSet,
-					password_set: this.passwordSet,
+					account_email: this.cfg.account_email,
+					device_id: this.cfg.whisker_device_id,
+					has_creds: this.hasCreds,
 				},
-				home_wifi: this.homeWifi,
 			}
 		},
 	},
 
 	async mounted() {
 		try {
-			const settings = await api.getAdminSettings()
-			this.applyBootstrap(settings)
+			this.applyBootstrap(await api.getAdminSettings())
 		} catch (err) {
-			this.report(err.message || 'Could not load the current settings', 'warning')
+			this.report(errorText(err, 'Could not load the current settings'), 'warning')
 		}
 	},
 
 	methods: {
 		/**
-		 * @param {object} settings admin bootstrap
+		 * @param {object} settings admin bootstrap (`adminBootstrap()` shape)
 		 */
 		applyBootstrap(settings) {
-			const robot = settings.robot || {}
-			this.robotId = robot.id || this.robotId
-			this.passwordSet = Boolean(robot.has_password || robot.password_set)
-			this.cfg.name = robot.name || this.cfg.name
-			this.cfg.host = robot.host || this.cfg.host
-			this.cfg.blid = robot.blid || this.cfg.blid
+			const device = (settings && settings.device) || {}
+			this.deviceId = device.id || this.deviceId
+			this.hasCreds = Boolean(device.has_creds || device.creds_set || this.hasCreds)
+			this.cfg.name = device.name || this.cfg.name
+			this.cfg.account_email = device.account_email ?? this.cfg.account_email
+			this.cfg.whisker_device_id = device.device_id ?? this.cfg.whisker_device_id
 			this.cfg.bridge_url = settings.bridge_url || this.cfg.bridge_url
 			this.cfg.operator_group = settings.operator_group || this.cfg.operator_group
 			this.cfg.retention_days = settings.retention_days ?? this.cfg.retention_days
-			this.homeWifi = settings.home_wifi || this.homeWifi
 			if (settings.alfred) {
 				this.alfred = {
 					enabled: Boolean(settings.alfred.enabled),
@@ -251,100 +217,54 @@ export default {
 		},
 
 		/**
-		 * @param {object} result softap setup response
+		 * @param {object} result onboard/select response
 		 */
-		onWizardApplied(result) {
-			const robot = result.robot || {}
-			if (robot.name) this.cfg.name = robot.name
-			if (robot.host) this.cfg.host = robot.host
-			if (robot.blid) this.cfg.blid = robot.blid
-			if (robot.id) this.robotId = robot.id
-			this.passwordSet = true
-			if (result.blid) this.cfg.blid = result.blid
-			if (result.ip) this.cfg.host = result.ip
+		onOnboarded(result) {
+			const device = (result && result.device) || {}
+			if (device.id) {
+				this.deviceId = device.id
+			}
+			if (device.name) {
+				this.cfg.name = device.name
+			}
+			if (device.account_email) {
+				this.cfg.account_email = device.account_email
+			}
+			if (device.device_id) {
+				this.cfg.whisker_device_id = device.device_id
+			}
+			this.hasCreds = true
 		},
 
 		async save() {
 			this.busy = 'save'
 			try {
-				const payload = {
+				const saved = await api.saveAdminSettings({
+					id: this.deviceId,
 					name: this.cfg.name,
-					host: this.cfg.host,
-					blid: this.cfg.blid,
 					bridge_url: this.cfg.bridge_url,
 					operator_group: this.cfg.operator_group,
 					retention_days: this.cfg.retention_days,
-					home_wifi: {
-						ssid: this.homeWifi.ssid,
-						timezone: this.homeWifi.timezone,
-						country: this.homeWifi.country,
-					},
 					alfred: {
 						enabled: this.alfred.enabled,
 						talk_room: this.alfred.talk_room,
 					},
-				}
-				if (this.cfg.password) {
-					payload.password = this.cfg.password
-				}
-				const saved = await api.saveAdminSettings(payload)
+				})
 				this.applyBootstrap(saved.settings || saved)
-				this.cfg.password = ''
-				this.passwordSet = true
 				this.report('Saved.')
 			} catch (err) {
-				this.report(err.message || 'Save failed', 'error')
+				this.report(errorText(err, 'Save failed'), 'error')
 			} finally {
 				this.busy = null
-			}
-		},
-
-		/** UDP broadcast + subnet probe; the bridge does the actual scanning. */
-		async scan() {
-			this.busy = 'discover'
-			this.candidates = []
-			this.report('Scanning the LAN for robots…', 'warning')
-			try {
-				const result = await api.discover()
-				this.candidates = result.candidates || result.robots || []
-				if (this.candidates.length === 0) {
-					this.report(result.error || 'No robots answered. Check that the robot is on the same VLAN.', 'warning')
-					return
-				}
-				const wanted = String(this.cfg.name || '').toLowerCase()
-				const named = wanted
-					? this.candidates.find((c) => String(c.robotname || '').toLowerCase() === wanted)
-					: null
-				this.use(named || this.candidates[0])
-				this.report(`Found ${this.candidates.length} robot(s).`)
-			} catch (err) {
-				this.report(err.message || 'Discovery failed', 'error')
-			} finally {
-				this.busy = null
-			}
-		},
-
-		/**
-		 * @param {object} candidate discovery row
-		 */
-		use(candidate) {
-			if (!candidate) {
-				return
-			}
-			this.cfg.host = candidate.ip || this.cfg.host
-			this.cfg.blid = candidate.blid || this.cfg.blid
-			if (candidate.robotname) {
-				this.cfg.name = candidate.robotname
 			}
 		},
 
 		async previewRetention() {
 			this.busy = 'retention-preview'
 			try {
-				const result = await api.retentionPreview()
-				this.retention = summarizePrune(result, 'would delete')
+				this.retention = summarizePrune(await api.retentionDryRun(), 'would delete')
 			} catch (err) {
-				this.report(err.message || 'Retention preview failed', 'error')
+				this.report(errorText(err, 'Retention preview failed'), 'error')
 			} finally {
 				this.busy = null
 			}
@@ -353,45 +273,10 @@ export default {
 		async applyRetention() {
 			this.busy = 'retention-apply'
 			try {
-				const result = await api.retentionApply()
-				this.retention = summarizePrune(result, 'deleted')
+				this.retention = summarizePrune(await api.retentionApply(), 'deleted')
 				this.report('Retention prune complete.')
 			} catch (err) {
-				this.report(err.message || 'Retention prune failed', 'error')
-			} finally {
-				this.busy = null
-			}
-		},
-
-		async retrieve() {
-			if (!this.cfg.host) {
-				this.report('Enter the robot\'s LAN IP first.', 'warning')
-				return
-			}
-			this.busy = 'onboard'
-			this.report(`Hold HOME on ${this.cfg.name || 'the robot'} until it plays two tones…`, 'warning')
-			try {
-				const result = await api.onboard({ ip: this.cfg.host, host: this.cfg.host, name: this.cfg.name })
-				if (result.robot) {
-					this.applyBootstrap({
-						...this.wizardConfig,
-						bridge_url: this.cfg.bridge_url,
-						operator_group: this.cfg.operator_group,
-						retention_days: this.cfg.retention_days,
-						home_wifi: this.homeWifi,
-						robot: result.robot,
-					})
-				}
-				if (result.blid) {
-					this.cfg.blid = result.blid
-				}
-				this.passwordSet = true
-				this.report(
-					result.error || 'Credentials retrieved and saved — Test connection when ready.',
-					result.error ? 'error' : 'success',
-				)
-			} catch (err) {
-				this.report(err.message || 'Credential retrieval failed', 'error')
+				this.report(errorText(err, 'Retention prune failed'), 'error')
 			} finally {
 				this.busy = null
 			}
@@ -400,18 +285,33 @@ export default {
 		async test() {
 			this.busy = 'connect'
 			try {
-				const result = await api.connectTest(this.robotId)
-				const ok = Boolean(result.connected || result.ok)
+				const result = await api.connectTest(this.deviceId)
+				const ok = Boolean(result.connected || result.mock || result.ok)
 				this.report(
-					ok ? 'MQTT session established.' : (result.conflict || result.error || 'Not connected'),
+					ok
+						? `Whisker cloud reachable${result.mock ? ' (mock bridge)' : ''}.`
+						: (result.error || 'Not connected'),
 					ok ? 'success' : 'error',
 				)
 			} catch (err) {
-				this.report(err.message || 'Connect test failed', 'error')
+				this.report(errorText(err, 'Connect test failed'), 'error')
 			} finally {
 				this.busy = null
 			}
 		},
 	},
+}
+
+/**
+ * @param {unknown} err axios error
+ * @param {string} fallback
+ * @returns {string} operator-facing message
+ */
+function errorText(err, fallback) {
+	const data = err && err.response && err.response.data
+	if (data && typeof data === 'object' && (data.error || data.message)) {
+		return String(data.error || data.message)
+	}
+	return String((err && err.message) || fallback)
 }
 </script>

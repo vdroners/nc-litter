@@ -1,109 +1,229 @@
 /**
- * Presentation helpers shared by the status strip, control pad and history.
+ * Presentation helpers shared by the status strip, control pad, cycle stage and
+ * history.
  *
  * These live outside the components so the same formatting the operator sees is
  * what the unit tests assert (a spec that re-implements a label proves nothing).
  */
 
-/** Litter-Robot phase -> operator-facing label; mirrors the bridge's PHASE_LABELS. */
-export const PHASE_LABELS = {
-	charge: 'Charging',
-	run: 'Cleaning',
-	evac: 'Emptying',
-	stop: 'Stopped',
-	stuck: 'Stuck',
-	hmMidMsn: 'Returning to dock',
-	hmUsrDock: 'Returning to dock',
-	hmPostMsn: 'Returning to dock',
-	new: 'Starting',
-	pause: 'Paused',
-	recharge: 'Recharging to resume',
-	dockend: 'Docked',
-	cancelled: 'Cancelled',
+/**
+ * The bridge's normalized status vocabulary (bridge/normalizer.py) mapped to the
+ * operator-facing label and the tone token the CSS paints with.
+ *
+ * `tone` values are the app's shared state tokens: `ok` (ready), `run`
+ * (cleaning), `evac` (emptying), `warn` (needs a hand), `sleep`, `danger`
+ * (fault), `idle` (offline / unknown).
+ */
+export const STATUS_LABELS = {
+	ready: { label: 'Ready', tone: 'ok', detail: 'Standing by for the next visit.' },
+	cleaning: { label: 'Cleaning', tone: 'run', detail: 'Sifting the globe — this takes under two minutes.' },
+	emptying: { label: 'Emptying', tone: 'evac', detail: 'Clearing the globe into the waste drawer.' },
+	drawer_full: { label: 'Drawer full', tone: 'warn', detail: 'The waste drawer is at capacity — empty it to resume cycling.' },
+	sleeping: { label: 'Sleeping', tone: 'sleep', detail: 'In its quiet hours; it will not cycle until it wakes.' },
+	paused: { label: 'Paused', tone: 'warn', detail: 'Cycle held — usually a guest was sensed near the globe.' },
+	fault: { label: 'Fault', tone: 'danger', detail: 'Something needs attention — see the alert below.' },
+	offline: { label: 'Offline', tone: 'idle', detail: 'Not reporting. The last reading may be stale.' },
 }
 
-const CYCLE_LABELS = {
-	none: 'Idle',
-	clean: 'Clean',
-	spot: 'Spot clean',
-	dock: 'Dock',
-	evac: 'Evacuate',
-	quick: 'Quick clean',
+/** Wait-time options the LR4 accepts, in minutes. */
+export const WAIT_TIME_OPTIONS = [3, 7, 15, 30]
+
+/**
+ * Accept either a bare status string or a whole state DTO, so components can
+ * pass whatever they already hold.
+ *
+ * @param {object|string|null|undefined} input status string or state DTO
+ * @returns {string} normalized status key ('' when unknown)
+ */
+export function statusKey(input) {
+	if (!input) {
+		return ''
+	}
+	const raw = typeof input === 'string' ? input : input.status
+	return String(raw || '').trim().toLowerCase()
 }
 
 /**
- * A robot that was just power-cycled (or had its battery pulled) reports
- * `batPct: 0` while docked until the BMS recalibrates over the first charge
- * cycle. Rendering that as a red "0%" wrongly reads as a critical battery, so
- * when we know the robot is charging we show a calibrating label instead.
- *
- * @param {number|null|undefined} pct
- * @param {string|null|undefined} [phase] current robot phase (e.g. `charge`)
- * @returns {string} e.g. `86%`
+ * @param {object|string|null|undefined} input status string or state DTO
+ * @returns {string} operator-facing status label
  */
-export function batteryLabel(pct, phase) {
+export function statusLabel(input) {
+	const key = statusKey(input)
+	if (!key) {
+		// A DTO with no status at all has not reported yet.
+		return input && typeof input === 'object' && input.status_label
+			? String(input.status_label)
+			: 'Unknown'
+	}
+	// The bridge ships pylitterbot's own wording in `status_label`; prefer it so
+	// "Clean Cycle In Progress" survives instead of being flattened to "Cleaning".
+	if (input && typeof input === 'object' && input.status_label) {
+		return String(input.status_label)
+	}
+	return (STATUS_LABELS[key] && STATUS_LABELS[key].label) || key
+}
+
+/**
+ * @param {object|string|null|undefined} input status string or state DTO
+ * @returns {'ok'|'run'|'evac'|'warn'|'sleep'|'danger'|'idle'} tone token
+ */
+export function statusTone(input) {
+	const key = statusKey(input)
+	return (STATUS_LABELS[key] && STATUS_LABELS[key].tone) || 'idle'
+}
+
+/**
+ * One-line "what does this mean" line for the hero pill.
+ *
+ * @param {object|string|null|undefined} input status string or state DTO
+ * @returns {string} detail sentence
+ */
+export function statusDetail(input) {
+	const key = statusKey(input)
+	if (!key) {
+		return 'Waiting for the first reading from the Whisker cloud.'
+	}
+	return (STATUS_LABELS[key] && STATUS_LABELS[key].detail) || ''
+}
+
+/**
+ * Waste-drawer fill. This gauge counts *up* toward trouble, so the wording is
+ * "% full" and it is graded the opposite way to the litter gauge.
+ *
+ * @param {number|null|undefined} pct 0..100
+ * @returns {string} e.g. `62% full`
+ */
+export function drawerLabel(pct) {
 	if (pct === null || pct === undefined || Number.isNaN(Number(pct))) {
 		return '—'
 	}
-	if (Number(pct) === 0 && phase === 'charge') {
-		return 'Charging…'
-	}
-	return `${Math.round(Number(pct))}%`
+	return `${Math.round(Number(pct))}% full`
 }
 
 /**
+ * Thresholds mirror knowledge/maintenance_thresholds.json so the gauge colour
+ * and the server-side advisory agree: warn at 90, danger at 98.
+ *
  * @param {number|null|undefined} pct
- * @param {string|null|undefined} [phase] current robot phase (e.g. `charge`)
- * @returns {'ok'|'warn'|'danger'|''} chip severity class
+ * @returns {'ok'|'warn'|'danger'|''} severity class
  */
-export function batteryClass(pct, phase) {
-	if (pct === null || pct === undefined) {
+export function drawerLevelClass(pct) {
+	if (pct === null || pct === undefined || Number.isNaN(Number(pct))) {
 		return ''
 	}
-	const value = Number(pct)
-	// 0% while charging is a recalibrating reading, not a critical battery.
-	if (value === 0 && phase === 'charge') {
-		return ''
-	}
-	if (value <= 15) {
+	const v = Number(pct)
+	if (v >= 98) {
 		return 'danger'
 	}
-	if (value <= 30) {
-		return 'warn'
-	}
-	return 'ok'
+	return v >= 90 ? 'warn' : 'ok'
 }
 
 /**
- * @param {string|null|undefined} bin normalized bin state
- * @returns {string} label
+ * Litter in the globe. This gauge counts *down*, so a low reading is the
+ * problem.
+ *
+ * @param {number|null|undefined} pct 0..100
+ * @returns {string} e.g. `45% left`
  */
-export function binLabel(bin) {
-	switch (bin) {
-	case 'ok': return 'Bin OK'
-	case 'full': return 'Bin full'
-	case 'missing': return 'Bin missing'
-	default: return 'Bin unknown'
+export function litterLabel(pct) {
+	if (pct === null || pct === undefined || Number.isNaN(Number(pct))) {
+		return '—'
 	}
+	return `${Math.round(Number(pct))}% left`
 }
 
 /**
- * @param {string|null|undefined} bin
+ * Mirrors the litter rules in knowledge/maintenance_thresholds.json: warn at or
+ * below 20, danger at or below 8.
+ *
+ * @param {number|null|undefined} pct
  * @returns {'ok'|'warn'|'danger'|''}
  */
-export function binClass(bin) {
-	if (bin === 'full') {
-		return 'warn'
+export function litterLevelClass(pct) {
+	if (pct === null || pct === undefined || Number.isNaN(Number(pct))) {
+		return ''
 	}
-	if (bin === 'missing') {
+	const v = Number(pct)
+	if (v <= 8) {
 		return 'danger'
 	}
-	return bin === 'ok' ? 'ok' : ''
+	return v <= 20 ? 'warn' : 'ok'
+}
+
+/**
+ * Last recorded cat weight. The LR4 reports pounds; one decimal is all the
+ * scale is honestly good for.
+ *
+ * @param {number|null|undefined} lbs
+ * @returns {string} e.g. `11.4 lb`
+ */
+export function catWeightLabel(lbs) {
+	const v = Number(lbs)
+	if (lbs === null || lbs === undefined || !Number.isFinite(v) || v <= 0) {
+		return '—'
+	}
+	return `${v.toFixed(1)} lb`
+}
+
+/**
+ * @param {number|null|undefined} minutes clean-cycle wait time
+ * @returns {string} e.g. `7 min`
+ */
+export function waitTimeLabel(minutes) {
+	const v = Number(minutes)
+	if (minutes === null || minutes === undefined || !Number.isFinite(v) || v <= 0) {
+		return '—'
+	}
+	return `${Math.round(v)} min`
+}
+
+/**
+ * Sleep window summary from the DTO's `sleep_schedule` block.
+ *
+ * @param {object|null|undefined} schedule `{ enabled, start_time, end_time }`
+ * @returns {string} e.g. `22:00 → 06:00`, `Off`, or '—' when unknown
+ */
+export function sleepWindowLabel(schedule) {
+	if (!schedule || typeof schedule !== 'object') {
+		return '—'
+	}
+	if (schedule.enabled === false) {
+		return 'Off'
+	}
+	const start = clockLabel(schedule.start_time)
+	const end = clockLabel(schedule.end_time)
+	if (!start && !end) {
+		return schedule.enabled ? 'On' : '—'
+	}
+	return `${start || '—'} → ${end || '—'}`
+}
+
+/**
+ * A sleep boundary reaches the UI as `HH:MM`, `HH:MM:SS` or a full ISO
+ * datetime; all three render as wall-clock `HH:MM`.
+ *
+ * @param {string|null|undefined} value
+ * @returns {string} `HH:MM`, or '' when unparseable
+ */
+export function clockLabel(value) {
+	if (!value) {
+		return ''
+	}
+	const raw = String(value)
+	const short = raw.match(/^(\d{1,2}):(\d{2})/)
+	if (short) {
+		return `${short[1].padStart(2, '0')}:${short[2]}`
+	}
+	const date = new Date(raw)
+	if (Number.isNaN(date.getTime())) {
+		return ''
+	}
+	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 /**
  * RSSI is reported in dBm; the buckets follow the usual Wi-Fi rule of thumb
- * (-60 good, -70 usable, worse than -75 is where MQTT starts dropping).
+ * (-60 good, -70 usable, worse than -75 is where the cloud link gets flaky).
  *
  * @param {number|null|undefined} rssi
  * @returns {string} label
@@ -154,40 +274,6 @@ export function signalBars(rssi) {
 	if (v >= -65) return 3
 	if (v >= -75) return 2
 	return 1
-}
-
-/**
- * Level bucket for the battery ring's colour. Charging at 0% is a calibrating
- * reading (see {@link batteryClass}) so it reads neutral, not critical.
- *
- * @param {number|null|undefined} pct
- * @param {string|null|undefined} [phase]
- * @returns {'charge'|'ok'|'warn'|'danger'|'unknown'}
- */
-export function batteryLevel(pct, phase) {
-	if (pct === null || pct === undefined || Number.isNaN(Number(pct))) {
-		return 'unknown'
-	}
-	const v = Number(pct)
-	if (v === 0 && phase === 'charge') {
-		return 'charge'
-	}
-	if (v <= 15) return 'danger'
-	if (v <= 30) return 'warn'
-	return 'ok'
-}
-
-/**
- * @param {object|null} state normalized state DTO
- * @returns {string} phase + cycle label, e.g. `Cleaning · Clean`
- */
-export function phaseLabel(state) {
-	if (!state || !state.phase) {
-		return 'Unknown'
-	}
-	const phase = state.phase_label || PHASE_LABELS[state.phase] || state.phase
-	const cycle = state.cycle && state.cycle !== 'none' ? CYCLE_LABELS[state.cycle] || state.cycle : null
-	return cycle ? `${phase} · ${cycle}` : phase
 }
 
 /**
@@ -268,92 +354,56 @@ export function timeLabel(ts) {
 	return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString()
 }
 
-/** @type {string[]} index 0 = Sunday, matching the dorita980 setWeek shape. */
-export const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-/* ─── Pose-map helpers (shared by MissionStage + LocationView) ──────────
- * Pose is in cm, dock-relative. World Y grows "up"; SVG Y grows down, so every
- * point is drawn at −y. The viewBox auto-fits the data so real motion reads.
- */
+/* ─── Ring / sparkline geometry (shared by every gauge) ──────────────────── */
 
 /**
- * @param {Array<{x:number,y:number}>} trail pose points (cm)
- * @returns {string} SVG polyline points, or '' when too short to draw
+ * Circumference of a gauge ring, so the component and the spec agree on the
+ * dash maths instead of each hardcoding 2πr.
+ *
+ * @param {number} radius SVG units
+ * @returns {number}
  */
-export function formatTrail(trail) {
-	if (!Array.isArray(trail) || trail.length < 2) {
+export function ringCircumference(radius) {
+	return 2 * Math.PI * Number(radius || 0)
+}
+
+/**
+ * `stroke-dashoffset` that draws `pct` of a ring. A missing reading draws
+ * nothing rather than a misleading full arc.
+ *
+ * @param {number|null|undefined} pct 0..100
+ * @param {number} [radius] ring radius in SVG units
+ * @returns {number} dash offset
+ */
+export function ringOffset(pct, radius = 16) {
+	const circ = ringCircumference(radius)
+	const v = Number(pct)
+	const frac = Number.isFinite(v) ? Math.max(0, Math.min(1, v / 100)) : 0
+	return circ * (1 - frac)
+}
+
+/**
+ * Build an SVG polyline for a percentage sparkline. Y is inverted (0% at the
+ * bottom) and a single sample is duplicated so a flat line still renders.
+ *
+ * @param {Array<{pct:number}|number>} samples oldest-first
+ * @param {number} [width] viewBox width
+ * @param {number} [height] viewBox height
+ * @returns {string} `x,y x,y …`, or '' when there is nothing to draw
+ */
+export function sparklinePoints(samples, width = 100, height = 28) {
+	const values = (Array.isArray(samples) ? samples : [])
+		.map((s) => Number(s && typeof s === 'object' ? s.pct : s))
+		.filter((v) => Number.isFinite(v))
+	if (values.length === 0) {
 		return ''
 	}
-	return trail.map((p) => `${Number(p.x) || 0},${-(Number(p.y) || 0)}`).join(' ')
-}
-
-/**
- * Square viewBox bounding the dock (0,0) + trail + current pose, padded, so a
- * live path fills the frame instead of drifting in a fixed box.
- *
- * @param {Array<{x:number,y:number}>} trail
- * @param {{x:number,y:number}} [pose]
- * @param {number} [pad] cm of breathing room
- * @returns {string} "minX minY w h" in screen coords (Y already flipped)
- */
-export function fitViewBox(trail, pose, pad = 80) {
-	const pts = [{ x: 0, y: 0 }]
-	if (Array.isArray(trail)) {
-		for (const p of trail) {
-			pts.push({ x: Number(p.x), y: Number(p.y) })
-		}
-	}
-	const px = Number(pose && pose.x)
-	const py = Number(pose && pose.y)
-	if (Number.isFinite(px) && Number.isFinite(py)) {
-		pts.push({ x: px, y: py })
-	}
-	let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity
-	for (const p of pts) {
-		if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
-			continue
-		}
-		minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x)
-		minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y)
-	}
-	if (!Number.isFinite(minX)) {
-		return '-500 -500 1000 1000'
-	}
-	const cx = (minX + maxX) / 2
-	const cy = (minY + maxY) / 2
-	const side = Math.max((maxX - minX) + pad * 2, (maxY - minY) + pad * 2, 300)
-	return `${cx - side / 2} ${-cy - side / 2} ${side} ${side}`
-}
-
-/**
- * Covered-cell footprint with dwell-driven opacity (bright = revisited most).
- *
- * @param {Array<{x:number,y:number,n:number}>} cells
- * @returns {Array<{x:number,y:number,opacity:string}>}
- */
-export function coveredCellStyle(cells) {
-	if (!Array.isArray(cells) || !cells.length) {
-		return []
-	}
-	const maxN = cells.reduce((mx, c) => Math.max(mx, Number(c.n) || 1), 1)
-	return cells.map((c) => ({
-		x: Number(c.x) || 0,
-		y: Number(c.y) || 0,
-		opacity: (0.18 + 0.42 * ((Number(c.n) || 1) / maxN)).toFixed(3),
-	}))
-}
-
-/**
- * Heading transform for the robot marker. SVG Y is flipped so a CCW robot angle
- * renders negated; the marker art points up (−Y) at 0 and robot theta 0 ≈ +X,
- * hence −90 to align the cone with travel.
- *
- * @param {{x:number,y:number,theta:number}} pose
- * @returns {string} SVG transform
- */
-export function markerTransformFor(pose) {
-	const x = Number(pose && pose.x) || 0
-	const y = -(Number(pose && pose.y) || 0)
-	const theta = -(Number(pose && pose.theta) || 0) - 90
-	return `translate(${x} ${y}) rotate(${theta})`
+	const pts = values.length === 1 ? [values[0], values[0]] : values
+	const step = width / (pts.length - 1)
+	return pts
+		.map((v, i) => {
+			const y = height - (Math.max(0, Math.min(100, v)) / 100) * height
+			return `${(i * step).toFixed(2)},${y.toFixed(2)}`
+		})
+		.join(' ')
 }

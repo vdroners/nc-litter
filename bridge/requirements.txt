@@ -1,0 +1,13 @@
+# nc-litter-bridge runtime + test deps. Pins kept deliberate: the pylitterbot
+# attribute/method names this bridge assumes were confirmed against 2025.6.2
+# (start_cleaning, reset, set_sleep_mode(value, sleep_time), set_night_light,
+# set_panel_lockout, set_power_status, set_wait_time; properties
+# waste_drawer_level/litter_level/pet_weight/cycle_count/status/...). Bumping
+# pylitterbot requires re-confirming those names via a live gate.
+pylitterbot==2025.6.2
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sse-starlette==2.1.3
+
+# --- dev / test only ---
+pytest==8.3.4
