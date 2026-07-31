@@ -70,6 +70,48 @@
 	--nc-litter-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 	--nc-litter-dur-fast: 0.15s;
 	--nc-litter-dur-med: 0.3s;
+
+	/* ── Accent INK (text + graphic strokes) ──────────────────────────────
+	 * `--nc-litter-tabby` (#d8a45e) is a large-area FILL colour. As text, or as a
+	 * 1–5px stroke, it fails WCAG on a light background: 2.24:1 on #ffffff and
+	 * 2.05:1 on the #f5f5f5 tile fill, where text needs 4.5:1 and a graphic needs
+	 * 3:1. On dark it already measures 8.02:1, so the DEFAULT value of each token
+	 * below is exactly what the dark path renders today and only the light themes
+	 * swap in a darkened ink.
+	 *
+	 * Two tokens because WCAG has two thresholds:
+	 *   --nc-litter-tabby-ink       graphic strokes / borders, needs 3:1
+	 *                               (#8a5f1e: 5.62 on #fff, 5.16 on #f5f5f5,
+	 *                                4.80 on #ededed, 4.30 on the amber wash)
+	 *   --nc-litter-tabby-ink-text  accent text, needs 4.5:1
+	 *                               (#7a5210: 6.90 on #fff, worst case 4.77 on
+	 *                                the darkest amber wash #e1d5c4)
+	 * Large solid fills keep --nc-litter-tabby.
+	 */
+	--nc-litter-tabby-ink: var(--nc-litter-tabby);
+	--nc-litter-tabby-ink-text: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text));
+}
+
+/* The default Nextcloud theme follows the OS, so key off the media query AND the
+ * explicit body themes. The dark rules come last so an explicit dark theme on a
+ * light OS still gets the bright amber back. */
+@media (prefers-color-scheme: light) {
+	:root {
+		--nc-litter-tabby-ink: #8a5f1e;
+		--nc-litter-tabby-ink-text: #7a5210;
+	}
+}
+
+body[data-theme-light],
+body[data-theme-light-highcontrast] {
+	--nc-litter-tabby-ink: #8a5f1e;
+	--nc-litter-tabby-ink-text: #7a5210;
+}
+
+body[data-theme-dark],
+body[data-theme-dark-highcontrast] {
+	--nc-litter-tabby-ink: var(--nc-litter-tabby);
+	--nc-litter-tabby-ink-text: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text));
 }
 
 #nc-litter-root,
@@ -78,6 +120,36 @@
 	// bound its flex column and hand a real scroll region to .nc-litter-main.
 	height: 100%;
 	min-height: 100%;
+}
+
+/* ─── Nextcloud <dt> reset ───────────────────────────────────────────────────
+ * Nextcloud's core/css/server.css styles a bare <dt> for its two-column
+ * personal-settings layout:
+ *
+ *   dt { display: inline-block; width: 130px; white-space: nowrap; text-align: end; }
+ *
+ * Every <dl> in this app is instead a stack of compact tiles whose label sits
+ * ABOVE its value, so all four of those declarations are wrong here:
+ *   - the fixed 130px width forces the tile wider than its ~120px grid column
+ *     (measured 7–46px of label clipped out of existence at 1600px — "Litter"
+ *     rendered as literally nothing);
+ *   - `nowrap` makes the app's own `overflow-wrap: anywhere` a no-op;
+ *   - `text-align: end` right-aligns every label over a left-aligned value.
+ *
+ * Reset it once for the whole app rather than per component — the previous
+ * approach patched exactly one selector (.nc-litter-stage__metric dt) and
+ * missed the other fifteen tiles.
+ */
+#nc-litter-root,
+.nc-litter-mount,
+.nc-litter-admin {
+	dt {
+		display: block;
+		overflow-wrap: anywhere;
+		text-align: start;
+		white-space: normal;
+		width: auto;
+	}
 }
 
 .nc-litter-app-shell {
@@ -152,7 +224,7 @@
 	&.is-ok {
 		background: var(--nc-app-accent-soft);
 		border-color: color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
-		color: color-mix(in srgb, var(--nc-litter-tabby) 70%, var(--color-main-text));
+		color: var(--nc-litter-tabby-ink-text);
 	}
 
 	&.warn,
@@ -169,7 +241,7 @@
 
 	&.is-run {
 		background: rgba(216, 164, 94, 0.24);
-		color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text));
+		color: var(--nc-litter-tabby-ink-text);
 	}
 
 	&.is-evac {
@@ -202,7 +274,7 @@
 
 		&.active {
 			background: var(--nc-app-accent-soft);
-			border-color: var(--nc-app-accent);
+			border-color: var(--nc-litter-tabby-ink);
 			font-weight: 600;
 		}
 	}
@@ -267,6 +339,11 @@
 	flex-wrap: wrap;
 	gap: 0.5rem;
 	margin: 0.75rem 0 0.25rem;
+}
+
+/* A panel that a parent grid already spaces — replaces inline style="margin:0". */
+.nc-litter-panel--flush {
+	margin: 0;
 }
 
 /* ─── Dense dashboard grid ───────────────────────────────────────────────
@@ -342,8 +419,8 @@
 		padding: 0.2rem 0.65rem;
 		text-transform: uppercase;
 
-		&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text)); }
-		&.is-run { background: rgba(216, 164, 94, 0.24); color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text)); }
+		&.is-ok { background: var(--nc-app-accent-soft); color: var(--nc-litter-tabby-ink-text); }
+		&.is-run { background: rgba(216, 164, 94, 0.24); color: var(--nc-litter-tabby-ink-text); }
 		&.is-evac { background: color-mix(in srgb, var(--nc-litter-state-evac) 22%, transparent); color: var(--color-main-text); }
 		&.is-warn { background: color-mix(in srgb, var(--nc-litter-state-warn) 24%, transparent); color: var(--color-warning-text, var(--color-main-text)); }
 		&.is-sleep { background: color-mix(in srgb, var(--nc-litter-state-sleep) 26%, transparent); color: var(--color-main-text); }
@@ -376,15 +453,21 @@
 	&__fact {
 		background: var(--color-background-hover);
 		border-radius: var(--r-sm);
+		// min-width:0 lets the grid cell shrink so long labels/values WRAP inside
+		// the tile. `overflow: hidden` used to live here too, which turned any
+		// residual overflow into silently deleted text instead of a second line.
 		min-width: 0;
-		// Contain long values inside the tile rather than letting them bleed.
-		overflow: hidden;
 		padding: 0.35rem 0.55rem;
 
 		dt {
 			color: var(--color-text-maxcontrast);
 			font-size: 0.72rem;
+			// See the app-wide <dt> reset above: Nextcloud ships nowrap + 130px +
+			// text-align:end on bare <dt>, which clipped these labels.
 			overflow-wrap: anywhere;
+			text-align: start;
+			white-space: normal;
+			width: auto;
 		}
 
 		dd {
@@ -428,7 +511,7 @@
 	&.is-on {
 		background: var(--nc-app-accent-soft);
 		border-color: color-mix(in srgb, var(--nc-litter-tabby) 40%, transparent);
-		color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text));
+		color: var(--nc-litter-tabby-ink-text);
 	}
 }
 
@@ -437,7 +520,7 @@
 	50% { opacity: 0.55; transform: scale(0.82); }
 }
 
-/* ─── Gauges: level rings + Wi-Fi bars ───────────────────────────────── */
+/* ─── Gauges: level rings ────────────────────────────────────────────── */
 
 .nc-litter-ring {
 	flex: none;
@@ -452,7 +535,8 @@
 
 	&__value {
 		fill: none;
-		stroke: var(--nc-litter-tabby);
+		// Ink, not the fill amber: a 3.5px stroke is a graphic object and needs 3:1.
+		stroke: var(--nc-litter-tabby-ink);
 		stroke-linecap: round;
 		stroke-width: 3.5;
 		transition: stroke-dashoffset var(--nc-litter-dur-med) var(--nc-litter-ease);
@@ -464,38 +548,12 @@
 		font-weight: 700;
 	}
 
-	&.is-ok &__value { stroke: var(--nc-litter-tabby); }
+	&.is-ok &__value { stroke: var(--nc-litter-tabby-ink); }
 	&.is-idle &__value { stroke: color-mix(in srgb, var(--color-main-text) 30%, transparent); }
 	&.is-warn &__value { stroke: var(--nc-litter-state-warn); }
 	&.is-warn &__pct { fill: var(--color-warning-text, var(--color-main-text)); }
 	&.is-danger &__value { stroke: var(--nc-litter-state-danger); }
 	&.is-danger &__pct { fill: var(--nc-litter-state-danger); }
-}
-
-.nc-litter-bars {
-	align-items: flex-end;
-	display: inline-flex;
-	flex: none;
-	gap: 2px;
-	height: 20px;
-	width: 26px;
-
-	i {
-		background: color-mix(in srgb, var(--color-main-text) 18%, transparent);
-		border-radius: 1px;
-		display: block;
-		flex: 1;
-
-		&:nth-child(1) { height: 35%; }
-		&:nth-child(2) { height: 55%; }
-		&:nth-child(3) { height: 78%; }
-		&:nth-child(4) { height: 100%; }
-
-		&.on { background: var(--nc-litter-tabby); }
-	}
-
-	&.warn i.on { background: var(--nc-litter-state-warn); }
-	&.danger i.on { background: var(--nc-litter-state-danger); }
 }
 
 /* ─── Fault-free donut (LifetimeStats) ───────────────────────────────── */
@@ -522,7 +580,7 @@
 
 	&__value {
 		fill: none;
-		stroke: var(--nc-litter-tabby);
+		stroke: var(--nc-litter-tabby-ink);
 		stroke-linecap: round;
 		stroke-width: 5;
 		transition: stroke-dashoffset var(--nc-litter-dur-med) var(--nc-litter-ease);
@@ -552,7 +610,7 @@
 
 	&__line {
 		fill: none;
-		stroke: var(--nc-litter-tabby);
+		stroke: var(--nc-litter-tabby-ink);
 		stroke-linecap: round;
 		stroke-linejoin: round;
 		stroke-width: 1.6;
@@ -568,7 +626,7 @@
 	}
 
 	&__head {
-		fill: var(--nc-litter-tabby-bright);
+		fill: var(--nc-litter-tabby-ink);
 	}
 }
 
@@ -859,6 +917,21 @@
 	.nc-litter-hero--evac .nc-litter-hero__dot {
 		animation: none !important;
 	}
+
+	// Killing the animations was not enough: the shell background wash, the nav
+	// buttons, both gauge strokes, the stage shadow, the drawer-fill bar, the
+	// drawer slide-in and the history/achievement lifts are all *transitions*.
+	// Near-zero rather than `none` so transitionend still fires for anything
+	// that waits on it.
+	#nc-litter-root *,
+	#nc-litter-root *::before,
+	#nc-litter-root *::after,
+	.nc-litter-drawer,
+	.nc-litter-admin * {
+		transition-duration: 0.01ms !important;
+		transition-delay: 0s !important;
+		animation-delay: 0s !important;
+	}
 }
 
 /* ─── Control pad ────────────────────────────────────────────────────── */
@@ -906,11 +979,10 @@
 /* Consistent keyboard focus ring across the app's own interactive surfaces
  * (NcButton has its own; these are our custom rows/tiles/buttons). */
 .nc-litter-history__row:focus-visible,
-.nc-litter-achv__item:focus-visible,
 .nc-litter-chip--button:focus-visible,
 .nc-litter-waitpick__select:focus-visible,
 .nc-litter-list button:focus-visible {
-	outline: 2px solid var(--nc-litter-tabby);
+	outline: 2px solid var(--nc-litter-tabby-ink);
 	outline-offset: 2px;
 }
 
@@ -932,18 +1004,21 @@
 	flex-direction: column;
 	font-size: 0.72rem;
 	gap: 2px;
-	min-width: 54px;
-	overflow: hidden;
+	// A band is as narrow as its flex-grow weight allows; min-width:54px combined
+	// with overflow:hidden clipped the label (the time text alone is ~56px).
+	// Wrap inside the band instead.
+	min-width: 0;
+	overflow-wrap: anywhere;
 	padding: 0.4rem 0.35rem;
 
 	&.is-ok {
 		background: var(--nc-app-accent-soft);
-		color: color-mix(in srgb, var(--nc-litter-tabby) 55%, var(--color-main-text));
+		color: var(--nc-litter-tabby-ink-text);
 	}
 
 	&.is-run {
 		background: rgba(216, 164, 94, 0.26);
-		color: color-mix(in srgb, var(--nc-litter-tabby) 70%, var(--color-main-text));
+		color: var(--nc-litter-tabby-ink-text);
 	}
 
 	&.is-evac {
@@ -1037,7 +1112,7 @@
 	}
 
 	&.is-info {
-		border-left-color: var(--nc-app-accent);
+		border-left-color: var(--nc-litter-tabby-ink);
 	}
 }
 
@@ -1066,15 +1141,18 @@
 	background: var(--color-background-hover);
 	border-radius: var(--r-sm);
 	// min-width:0 lets the grid cell shrink so long values wrap instead of
-	// forcing the box wider than its column / clipping.
+	// forcing the box wider than its column. No `overflow: hidden` — clipping a
+	// label is worse than wrapping it (see the app-wide <dt> reset).
 	min-width: 0;
-	overflow: hidden;
 	padding: 0.4rem 0.6rem;
 
 	dt {
 		color: var(--color-text-maxcontrast);
 		font-size: 0.75rem;
 		overflow-wrap: anywhere;
+		text-align: start;
+		white-space: normal;
+		width: auto;
 	}
 
 	dd {
@@ -1116,7 +1194,7 @@
 
 		&.active {
 			background: var(--nc-app-accent-soft);
-			border-color: var(--nc-app-accent);
+			border-color: var(--nc-litter-tabby-ink);
 		}
 	}
 }
@@ -1141,7 +1219,7 @@
 
 .nc-litter-alfred {
 	&__open {
-		color: var(--nc-app-accent);
+		color: var(--nc-litter-tabby-ink-text);
 		font-size: 0.85rem;
 	}
 
@@ -1178,12 +1256,15 @@
 	background: var(--color-main-background);
 	border-left: 1px solid color-mix(in srgb, var(--nc-litter-tabby) 30%, var(--color-border));
 	box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
-	height: 100%;
+	// The Nextcloud header owns the top 50px at z-index 2000, so a drawer at
+	// top:0 / z-index:100 puts its own heading behind it. Start below the header
+	// and take the remaining height.
+	height: calc(100% - var(--header-height, 50px));
 	overflow: auto;
 	padding: 1rem;
 	position: fixed;
 	right: 0;
-	top: 0;
+	top: var(--header-height, 50px);
 	transform: translateX(100%);
 	transition: transform 0.2s ease;
 	width: min(380px, 92vw);
@@ -1277,7 +1358,7 @@
 }
 
 .nc-litter-wizard__steps li.is-active {
-	color: var(--nc-app-accent, #d8a45e);
+	color: var(--nc-litter-tabby-ink-text);
 	font-weight: 600;
 }
 
@@ -1370,7 +1451,7 @@
 			box-shadow: var(--nc-litter-shadow-md);
 			transform: translateY(-1px);
 		}
-		&.active { border-color: var(--nc-app-accent); background: var(--nc-app-accent-soft); }
+		&.active { border-color: var(--nc-litter-tabby-ink); background: var(--nc-app-accent-soft); }
 	}
 
 	&__head {
@@ -1399,10 +1480,10 @@
 	padding: 0.1rem 0.5rem;
 	text-transform: uppercase;
 
-	&.is-ok { background: var(--nc-app-accent-soft); color: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text)); }
+	&.is-ok { background: var(--nc-app-accent-soft); color: var(--nc-litter-tabby-ink-text); }
 	&.is-warn { background: rgba(255, 152, 0, 0.2); color: var(--color-warning-text, var(--color-main-text)); }
 	&.is-danger { background: rgba(244, 67, 54, 0.18); color: var(--color-error-text, var(--color-main-text)); }
-	&.is-run { background: rgba(216, 164, 94, 0.24); color: color-mix(in srgb, var(--nc-litter-tabby) 80%, var(--color-main-text)); }
+	&.is-run { background: rgba(216, 164, 94, 0.24); color: var(--nc-litter-tabby-ink-text); }
 }
 
 .nc-litter-empty {
@@ -1482,7 +1563,10 @@
 	&__new {
 		background: var(--nc-app-accent, var(--nc-litter-tabby));
 		border-radius: 999px;
-		color: var(--color-primary-text, #1a1a1c);
+		// NOT --color-primary-text: that is the ink for the *theme's* primary fill
+		// and resolves to #ffffff here, i.e. white on amber at 2.24:1. This pill's
+		// background is always the amber, so its ink is always charcoal (7.77:1).
+		color: #1a1a1c;
 		font-size: 0.62rem;
 		font-weight: 700;
 		letter-spacing: 0.03em;
@@ -1500,7 +1584,9 @@
 		background: var(--color-background-dark);
 		border-radius: 999px;
 		display: block;
-		height: 14px;
+		// min-height, not height: the count text inside sets the real height, so
+		// raising the browser font size grows the bar instead of clipping it.
+		min-height: 1.15rem;
 		margin-top: 0.2rem;
 		overflow: hidden;
 		position: relative;
@@ -1514,9 +1600,10 @@
 
 	&__count {
 		color: var(--color-main-text);
-		font-size: 0.66rem;
+		// 0.66rem was 9.9px at the live 15px root — below the legibility floor.
+		font-size: 0.75rem;
 		left: 0;
-		line-height: 14px;
+		line-height: 1.15rem;
 		position: absolute;
 		right: 0;
 		text-align: center;

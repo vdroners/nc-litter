@@ -41,9 +41,12 @@ export function streamUrl(deviceId = DEFAULT_DEVICE_ID) {
 
 /**
  * Run one operator command. Names are `[a-z_]+` and must be in the server's
- * ALLOWED_ACTIONS: clean, empty, reset_drawer, sleep_on, sleep_off,
- * night_light_on, night_light_off, panel_lock_on, panel_lock_off, power_on,
- * power_off, set_wait_time.
+ * ALLOWED_ACTIONS: clean, reset, night_light_on, night_light_off, panel_lock_on,
+ * panel_lock_off, power_on, power_off, set_wait_time — plus `empty` and
+ * `reset_drawer`, which are deprecated aliases of `reset`.
+ *
+ * There is no `sleep_on` / `sleep_off`: pylitterbot raises NotImplementedError
+ * for LR4 sleep, so the window is read-only and is changed in the Whisker app.
  *
  * @param {string} name action name
  * @param {number} [deviceId]
@@ -91,8 +94,9 @@ export function exportCyclesUrl(format, deviceId = DEFAULT_DEVICE_ID) {
 }
 
 /**
- * The four LR4 settings the app manages: `night_light`, `panel_lock`,
- * `wait_time` and `sleep`.
+ * The LR4 settings the app manages: `night_light`, `panel_lock`, `wait_time` and
+ * `sleep`. The block also carries `wait_time_values` (the only values the unit
+ * accepts) and `sleep_writable`, which is FALSE on an LR4.
  *
  * @param {number} [deviceId]
  * @returns {Promise<object>} settings block
@@ -103,13 +107,22 @@ export async function getSettings(deviceId = DEFAULT_DEVICE_ID) {
 }
 
 /**
+ * Write a settings patch. The response reports per-key truth rather than a blanket
+ * success, so the whole envelope is returned: `errors` names each key the unit
+ * refused and why (e.g. `sleep: "sleep_read_only: …"`), and `settings` is the
+ * state after the write, which the caller compares against the patch.
+ *
  * @param {object} settings patch — only present keys are applied
  * @param {number} [deviceId]
- * @returns {Promise<object>} settings after the write
+ * @returns {Promise<{ok: boolean, settings: object, errors: object}>}
  */
 export async function setSettings(settings, deviceId = DEFAULT_DEVICE_ID) {
 	const { data } = await axios.put(`${base()}/api/devices/${deviceId}/settings`, { settings })
-	return data.settings || {}
+	return {
+		ok: data.ok !== false,
+		settings: data.settings || {},
+		errors: data.errors || (data.error ? { _: String(data.error) } : {}),
+	}
 }
 
 /**

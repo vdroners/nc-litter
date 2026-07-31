@@ -64,6 +64,123 @@ interface IBootContext
 
 namespace OCP;
 
+interface IDBConnection
+{
+}
+
+namespace OCP\DB\QueryBuilder;
+
+interface IQueryBuilder
+{
+	public const PARAM_INT = 1;
+	public const PARAM_STR = 2;
+	public const PARAM_NULL = 0;
+	public const PARAM_INT_ARRAY = 101;
+}
+
+namespace OCP\AppFramework\Db;
+
+class DoesNotExistException extends \Exception
+{
+}
+
+/**
+ * Minimal stand-in for Nextcloud's Entity: the magic get/set accessors, the
+ * declared-type coercion and the dirty-field bookkeeping the app relies on.
+ * Enough to exercise the services without a database.
+ */
+class Entity
+{
+	protected $id;
+
+	/** @var array<string,string> */
+	private array $fieldTypes = [];
+
+	/** @var array<string,bool> */
+	private array $updatedFields = [];
+
+	public function __call(string $method, array $args)
+	{
+		if (str_starts_with($method, 'set')) {
+			$this->assign(lcfirst(substr($method, 3)), $args[0] ?? null);
+			return null;
+		}
+		if (str_starts_with($method, 'get')) {
+			return $this->read(lcfirst(substr($method, 3)));
+		}
+		if (str_starts_with($method, 'is')) {
+			return (bool) $this->read(lcfirst(substr($method, 2)));
+		}
+		throw new \BadFunctionCallException($method . ' does not exist');
+	}
+
+	protected function addType(string $field, string $type): void
+	{
+		$this->fieldTypes[$field] = $type;
+	}
+
+	private function assign(string $field, mixed $value): void
+	{
+		if (!property_exists($this, $field)) {
+			throw new \BadFunctionCallException($field . ' is not a field of ' . static::class);
+		}
+		$this->updatedFields[$field] = true;
+		if ($value === null) {
+			$this->$field = null;
+			return;
+		}
+		$type = $this->fieldTypes[$field] ?? null;
+		if ($type !== null && in_array($type, ['integer', 'float', 'string', 'boolean'], true)) {
+			settype($value, $type);
+		}
+		$this->$field = $value;
+	}
+
+	private function read(string $field): mixed
+	{
+		if (!property_exists($this, $field)) {
+			throw new \BadFunctionCallException($field . ' is not a field of ' . static::class);
+		}
+		return $this->$field;
+	}
+
+	/** @return array<string,bool> */
+	public function getUpdatedFields(): array
+	{
+		return $this->updatedFields;
+	}
+
+	public function resetUpdatedFields(): void
+	{
+		$this->updatedFields = [];
+	}
+}
+
+/**
+ * QBMapper stub with an all-optional constructor, so a test double can extend a
+ * real mapper (the services type-hint the concrete classes) without a database.
+ */
+abstract class QBMapper
+{
+	protected $db;
+	protected string $tableName = '';
+	protected ?string $entityClass = null;
+
+	public function __construct($db = null, string $tableName = '', ?string $entityClass = null)
+	{
+		$this->db = $db;
+		$this->tableName = $tableName;
+		$this->entityClass = $entityClass;
+	}
+
+	public function getTableName(): string
+	{
+		return $this->tableName;
+	}
+}
+
+namespace OCP;
+
 class Util
 {
 	public static function addStyle(string $app, string $name): void

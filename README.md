@@ -1,29 +1,50 @@
 # NC Litter
 
-![version](https://img.shields.io/badge/version-0.9.1-C4A574)
+![version](https://img.shields.io/badge/version-0.2.0-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
 
-Nextcloud app to control a Litter-Robot over the **local LAN MQTT API**.
-Remote access is via your Nextcloud URL; the private Node bridge never
-binds a public port.
+Nextcloud app to monitor and control a **Whisker Litter-Robot 4** through the
+Whisker cloud. Remote access is via your Nextcloud URL; the private Python
+bridge never binds a public port.
 
-The UI brands itself around the **robot’s display name** (e.g. Alfred on
-this install) with a butler-style charcoal / brass / cream look, a live
-mission stage on the Dashboard, and an advanced Location map when the
-robot publishes pose.
+The UI brands itself around the **unit's Whisker display name** (e.g. *Poop
+Roller* on this install) with a charcoal / tabby-amber / cream look, live drawer
+and litter ring gauges, and an animated globe on the Dashboard during a cycle.
 
 ## Features
 
-- **Factory Soft-AP setup wizard** (960/980 class) — join home Wi‑Fi without the iRobot app
-- Start / pause / resume / stop / dock / spot / find
-- Auto discover (LAN `:8883` scan + UDP) for IP / BLID
-- Live status strip (battery, bin, Wi‑Fi, phase)
-- **Mission stage** — realtime phase animation + coverage / duration counters
-- Location map with trail + heading when pose is available; mission theater fallback otherwise
-- Mission history from install (local only)
-- Schedule week editor, preferences, retention
-- Error decoder, maintenance hints, connection health drawer
+- **Whisker account onboarding** in Admin settings — email + password, stored
+  encrypted (`enc:v1:`), then pick the LR4 to bind
+- Live status: Ready · Cleaning · Emptying · Drawer full · Sleeping · Paused ·
+  Fault · Offline, with the raw LR4 status code decoded to plain English
+- **Two ring gauges** — waste-drawer fullness and litter remaining
+- Last cat weight, cycle count, cycles since the drawer filled, wait time,
+  scoops saved, night-light and panel-lock state
+- Controls: start a clean cycle, **Reset / clear error**, night light,
+  panel lock, wait time (the device's own enum: 3/7/15/25/30 min), power
+- Cycle history with a phase timeline, CSV/JSON export, and lifetime stats
+- 22 cat-themed achievements
+- Error decoder + maintenance hints + a connection-health drawer
 - Nextcloud Notifications + Activity
+- Optional **Alfred** (OpenClaw) Talk integration: `@alfred litter status |
+  clean | reset | light-on | light-off | lock | unlock | help`
+
+## What the LR4 genuinely cannot do
+
+Recorded here because the app used to offer some of it and quietly fail. All of
+this was verified by introspecting the installed `pylitterbot` and by probing the
+real unit — see `bridge/test/test_pylitterbot_contract.py`, which fails on
+purpose if upstream ever gains these capabilities.
+
+| Thing | Reality |
+|---|---|
+| **Sleep mode** | Read-only. `LitterRobot4.set_sleep_mode` raises `NotImplementedError` and there is no sleep verb in `LitterRobot4Command`. The window is shown but changed in the Whisker app. |
+| **Emptying the drawer** | Not a command. `reset()` sends a short reset press: it clears errors and may turn the globe once. Emptying is a manual job. |
+| **Resetting the cycle counter** | No command exists. `cycles_after_drawer_full` is the device's own counter. |
+| **Wi-Fi signal / SSID** | No such property. Only `wifi_mode_status`, which reads `OFF` even on a healthy unit — so there is no Wi-Fi UI. |
+| **`last_seen`** | Present but unreliable (observed 3 days stale on a live, healthy unit). Never used as a freshness signal; `last_poll_ok_at` is. |
+| **Immediate write feedback** | The Whisker cloud takes tens of seconds to report a write back. The bridge re-polls at +5/+10/+20s so the UI converges instead of appearing inert. |
+| **Wait time as a range** | It is an enum — `[3, 7, 15, 25, 30]`. There is no 5. The device rejects anything else. |
 
 ## Stack
 
@@ -31,56 +52,75 @@ robot publishes pose.
 Browser ──► Nextcloud (nc_litter PHP + Vue)
                 │
                 ▼  Docker DNS (nc_litter_bridge:8080)
-         nc-litter-bridge (Node + dorita980)
-           │                │
-           │                ▼  host.docker.internal:8091
-           │         nc-litter-wifi-helper (Soft-AP)
-           ▼  TLS MQTT :8883 (LAN only)
-         Litter-Robot
+         nc-litter-bridge (Python: FastAPI + pylitterbot)
+                │
+                ▼  HTTPS (Cognito auth + GraphQL)
+         Whisker cloud (lr4.iothings.site)
+                │
+                ▼
+         Litter-Robot 4
 ```
 
 - Nextcloud app (`nc_litter`) — Vue 2.7 + Pinia + PHP 8.1+
-- Sidecar `nc-litter-bridge` — Node + [dorita980](https://github.com/koalazak/dorita980)
-- Host helper `wifi-helper/` — Soft-AP Wi‑Fi provision (systemd)
+- Sidecar `nc-litter-bridge` — Python + [pylitterbot](https://github.com/natekspencer/pylitterbot)
 - Deploy target: `cloud_app` → `/var/www/html/custom_apps/nc_litter`
+
+There is no local transport. `whiskerless` (local MQTT/BLE) exists but requires
+running a TLS broker and a one-time BLE re-provision that takes the unit off the
+Whisker app, which is not wanted here.
 
 ## Quick start
 
 ```bash
 cd /media/4TB/nc-litter
 npm ci
-make helper-install                 # Soft-AP wifi helper + token in .env
-# Real robot (not mock):
-#   echo 'LITTER_MOCK=0' >> .env
-#   echo 'ROBOT_IP=10.0.0.242' >> .env
-#   echo 'LITTER_DISCOVER_SUBNETS=10.0.0.0/24' >> .env
-LITTER_MOCK=0 make ship RESTART=1   # build + bridge-up + deploy + gate-preflight
-make gate-gui
-make gate-live LITTER_MOCK=1        # live gates without a robot
+# Real device (not mock) — .env is gitignored and must be chmod 600:
+#   printf 'LITTER_MOCK=0\nWHISKER_EMAIL=you@example.com\nWHISKER_PASSWORD=...\n' > .env
+#   chmod 600 .env
+make ship                      # build + bridge-up + deploy + gate-preflight
+make gate-live                 # live bridge gates against the real unit
+make gate-gui                  # GUI source gates
+make gate-live LITTER_MOCK=1   # gates with no Whisker account
 ```
 
-Admin: Nextcloud → Administration → NC Litter → **Factory setup wizard**
-(Soft-AP). Advanced: Auto discover + hold HOME. Operators must be in the
-`litter-operators` group.
+Admin: Nextcloud → Administration → **NC Litter** → *Connect Whisker account*.
+Operators must be in the `litter-operators` group.
 
 ### Important env / networking notes
 
 | Item | Value |
 |---|---|
-| Bridge URL (from `cloud_app`) | `http://nc_litter_bridge:8080` (underscores; hyphen alias also works) |
-| Mock mode | `LITTER_MOCK=1` (compose default) vs `LITTER_MOCK=0` for a real robot |
-| Discover subnets | `LITTER_DISCOVER_SUBNETS` (CIDR list, default `10.0.0.0/24`) |
-| Soft-AP helper | `LITTER_WIFI_HELPER_URL` / `LITTER_WIFI_HELPER_TOKEN` |
-| fw2 TLS | Litter-Robot 960 needs the bridge TLS shim (`bridge/lib/tlsLegacy.js`) — already baked in |
+| Bridge URL (from `cloud_app`) | `http://nc_litter_bridge:8080` |
+| Mock mode | `LITTER_MOCK=1` (compose default) vs `LITTER_MOCK=0` for a real unit |
+| Whisker creds | `WHISKER_EMAIL` / `WHISKER_PASSWORD` in `.env` (never committed) |
+| Device selection | `LITTER_DEVICE_ID` (id or serial; blank = first on the account) |
+| Poll cadence | `LITTER_REFRESH_S=30` — the ceiling on data freshness |
+| Debug port | `127.0.0.1:18793` only; never bound to `0.0.0.0` |
+
+Credentials live in two places and nowhere else: the gitignored `.env` for the
+bridge, and the `creds_enc` column (`enc:v1:`, Nextcloud `ICrypto`) once
+onboarded through the UI. They are never logged and never returned by any API
+response.
+
+## Testing
+
+```bash
+make gate-preflight   # layout + version sync + secret hygiene, then all suites
+npx vitest run                                   # 106 frontend tests
+cd bridge && python3 -m pytest test -q           # 33 (contract tests skip: no pylitterbot on host)
+docker exec nc_litter_bridge python3 -m pytest /app/test -q   # 41, incl. the pylitterbot contract
+bash tools/litter-live-gates.sh                  # against the real device
+```
+
+The bridge contract tests are the important ones: they bind to the *installed*
+`pylitterbot` rather than a test double. A fake robot that implemented
+`set_sleep_mode` is exactly how a permanently-broken Sleep button shipped.
 
 ## Docs
 
-- Operator notes: [`docs/OPERATOR.md`](docs/OPERATOR.md)
-- Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- Contributing / gates: [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- Plan (v0.3 Soft-AP wizard): [`.cursor/plans/nc-litter-softap-wizard-v0.3.md`](.cursor/plans/nc-litter-softap-wizard-v0.3.md)
+- Plan + pass/fail gates: [`docs/plans/nc-litter-v0.1-plan.md`](docs/plans/nc-litter-v0.1-plan.md)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
 
-AGPL-3.0-or-later. Bridge dependency dorita980 is MIT.
+AGPL-3.0-or-later. Bridge dependency pylitterbot is MIT.

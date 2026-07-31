@@ -15,15 +15,17 @@
 			:fallback-name="fallbackName" />
 
 		<!-- Controls -->
-		<section class="nc-litter-panel nc-litter-dashboard__controls" style="margin: 0">
+		<section class="nc-litter-panel nc-litter-panel--flush nc-litter-dashboard__controls">
 			<h3>Controls</h3>
 			<ControlPad
 				:disabled="!store.canOperateNow"
 				:pending="store.actionPending"
-				:sleeping="store.sleeping"
+				:capabilities="store.capabilities"
 				:night-light="store.nightLight"
 				:panel-lock="store.panelLock"
 				:wait-time="store.waitTime"
+				:wait-time-values="store.waitTimeValues"
+				:device-label="name"
 				@action="onAction" />
 		</section>
 
@@ -35,14 +37,15 @@
 			:fallback-name="fallbackName" />
 
 		<!-- Right rail: drawer trend + lifetime + achievements teaser -->
-		<section class="nc-litter-panel nc-litter-dashboard__trend" style="margin: 0">
+		<section class="nc-litter-panel nc-litter-panel--flush nc-litter-dashboard__trend">
 			<DrawerTrend :samples="store.drawerTrend" :cycles-since-empty="store.cyclesSinceEmpty" />
 		</section>
 
-		<section class="nc-litter-panel nc-litter-dashboard__lifetime" style="margin: 0">
+		<section class="nc-litter-panel nc-litter-panel--flush nc-litter-dashboard__lifetime">
 			<div class="nc-litter-view__header">
 				<h3>Lifetime</h3>
-				<span class="nc-litter-muted">{{ achv.unlocked }} / {{ achv.total }} achievements</span>
+				<!-- The wall itself lives on the History tab; the teaser now goes there. -->
+				<a class="nc-litter-muted" href="#/history">{{ achv.unlocked }} / {{ achv.total }} achievements</a>
 			</div>
 			<LifetimeStats
 				:state="store.state"
@@ -101,7 +104,7 @@ export default {
 		},
 		fallbackName() {
 			const boot = this.store.bootstrap || {}
-			return (boot.device && boot.device.name) || 'Alfred'
+			return (boot.device && boot.device.name) || 'Litter-Robot 4'
 		},
 		name() {
 			return (this.store.state && this.store.state.name) || this.fallbackName

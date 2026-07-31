@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 
 import * as api from '../services/api.js'
-import { ageSeconds, statusKey } from '../utils/format.js'
+import { WAIT_TIME_OPTIONS, ageSeconds, numberOrNull, statusKey } from '../utils/format.js'
 import { decoratedError, hasFault, isCloudDown, isStale } from '../utils/errorDecoder.js'
 
 /** Poll cadence when SSE is unavailable (notify_push not required). */
@@ -13,8 +13,17 @@ const POLL_MS = 3000
  * data still refreshes without waiting for the stream to error out.
  */
 const SSE_BACKUP_POLL_MS = 6000
-/** Consecutive SSE failures tolerated before falling back to polling. */
-const SSE_MAX_FAILURES = 1
+/**
+ * Consecutive SSE failures tolerated before falling back to polling.
+ *
+ * The `/stream` endpoint is single-shot by design: it sends ONE enriched `state`
+ * frame plus a `retry: 5000` hint and then closes, and the browser reconnects on
+ * its own about every 5 s. EventSource reports every one of those normal closes
+ * as an `error` event, so a threshold of 1 abandoned SSE permanently on the very
+ * first (healthy) cycle. The counter is reset whenever a frame arrives, so this
+ * only trips when several reconnects in a row deliver nothing at all.
+ */
+const SSE_MAX_FAILURES = 5
 /** Client-side live timeline cap — history detail reads the persisted events. */
 const MAX_LIVE_EVENTS = 60
 /**
@@ -37,11 +46,18 @@ let focusHandler = null
  * Optimistic status hint per action. The Whisker cloud takes a poll or two to
  * report the new status; without a hint the button feels dead. Reverted on error
  * and overwritten by the next real sample either way.
+ *
+ * Only `clean` gets one. There is deliberately no hint for:
+ *   - `reset` / `empty` / `reset_drawer`: all three are the same short reset
+ *     press. It clears a fault and MAY spin the globe; it does not tip the
+ *     drawer, so painting an "Emptying" status invented a state the unit never
+ *     enters.
+ *   - `sleep_on` / `sleep_off`: those actions no longer exist. pylitterbot raises
+ *     NotImplementedError for LR4 sleep, so the old hint painted the hero as
+ *     "Sleeping" seconds before the HTTP 400 landed.
  */
 const OPTIMISTIC_STATUS = {
 	clean: 'cleaning',
-	empty: 'emptying',
-	sleep_on: 'sleeping',
 }
 
 /** Boolean settings a toggle action flips, so the chip updates immediately. */
@@ -50,8 +66,6 @@ const OPTIMISTIC_FLAG = {
 	night_light_off: ['night_light', false],
 	panel_lock_on: ['panel_lock', true],
 	panel_lock_off: ['panel_lock', false],
-	sleep_on: ['sleeping', true],
-	sleep_off: ['sleeping', false],
 }
 
 export const useDeviceStore = defineStore('device', {
@@ -73,8 +87,25 @@ export const useDeviceStore = defineStore('device', {
 		/** @type {'idle'|'sse'|'poll'} which live pipeline is active */
 		transport: 'idle',
 		drawerOpen: false,
-		/** @type {string|null} */
+		/**
+		 * Transient read error (state / history / settings fetch). Cleared by the
+		 * next successful poll, which is right for "the last GET failed".
+		 *
+		 * @type {string|null}
+		 */
 		error: null,
+		/**
+		 * STICKY failure of an operator command. Kept separate from `error`
+		 * precisely because `loadState()` runs every few seconds and clears
+		 * `error` on success — which used to erase the only evidence that a
+		 * command had been rejected before the operator could read it. Only
+		 * `clearActionError()` (the banner's dismiss button) clears this.
+		 *
+		 * @type {{action: string, message: string}|null}
+		 */
+		actionError: null,
+		/** @type {object} per-key reasons from the last settings write */
+		settingsErrors: {},
 		/** @type {string|null} action currently in flight */
 		actionPending: null,
 		lastSeenAgeS: 0,
@@ -91,7 +122,7 @@ export const useDeviceStore = defineStore('device', {
 		),
 		deviceName: (state) => (state.state && state.state.name)
 			|| (state.bootstrap.device && state.bootstrap.device.name)
-			|| 'Alfred',
+			|| 'Litter-Robot 4',
 		connected: (state) => Boolean(state.state && (state.state.connected || state.state.mock)),
 		cloudDown: (state) => isCloudDown(state.state),
 		stale: (state) => isStale(state.state),
@@ -106,22 +137,46 @@ export const useDeviceStore = defineStore('device', {
 		litterPct: (state) => numberOrNull(state.state && state.state.litter_level_pct),
 		/** @returns {number|null} last recorded cat weight, in pounds */
 		catWeight: (state) => numberOrNull(state.state && state.state.cat_weight),
-		cyclesTotal: (state) => numberOrNull(state.state && state.state.cycles_total),
 		cyclesSinceEmpty: (state) => numberOrNull(state.state && state.state.cycles_since_empty),
 		sleeping: (state) => Boolean(state.state && state.state.sleeping),
-		sleepSchedule: (state) => (state.state && state.state.sleep_schedule) || null,
 		nightLight: (state) => Boolean(state.state && state.state.night_light),
 		panelLock: (state) => Boolean(state.state && state.state.panel_lock),
 		waitTime: (state) => numberOrNull(
 			(state.settings && state.settings.wait_time)
 			?? (state.state && state.state.wait_time),
 		),
+		/**
+		 * What this unit can actually be told to do. The LR4's `sleep` is FALSE
+		 * here — pylitterbot has no write path for it — so the control pad reads
+		 * this rather than hardcoding a command list.
+		 */
 		capabilities: (state) => (state.state && state.state.capabilities) || {},
-		bridgeInfo: (state) => (state.state && state.state.bridge) || {},
+		/** Wait-time values the unit accepts; the DTO is the authority. */
+		waitTimeValues: (state) => {
+			const caps = (state.state && state.state.capabilities) || {}
+			const fromSettings = state.settings && state.settings.wait_time_values
+			const list = fromSettings || caps.wait_time_values
+			return Array.isArray(list) && list.length ? list.map(Number).filter(Number.isFinite) : WAIT_TIME_OPTIONS
+		},
+		/** False when the unit's sleep window can only be changed in the Whisker app. */
+		sleepWritable: (state) => {
+			const settings = state.settings || {}
+			if (typeof settings.sleep_writable === 'boolean') {
+				return settings.sleep_writable
+			}
+			const schedule = (state.state && state.state.sleep_schedule) || {}
+			if (typeof schedule.writable === 'boolean') {
+				return schedule.writable
+			}
+			return Boolean((state.state && state.state.capabilities || {}).sleep)
+		},
 		alfred: (state) => (state.bootstrap && state.bootstrap.alfred) || { enabled: false, talk_room: '' },
-		// The page controller only lets group members and admins render the app at
-		// all, and every mutation is re-checked server-side; the flag is here so a
-		// read-only bootstrap can grey the controls out instead of failing on POST.
+		// NOTE: the page bootstrap has no `can_operate` key (its keys are
+		// route_base, app_version, operator_group, retention_days, is_admin,
+		// device, allowed_actions, alfred), and PageController::index() already
+		// refuses to render for anyone outside the operator group or admin — so
+		// this is always true today. It stays as the single place to gate on if
+		// lib/Controller/PageController.php ever starts emitting `can_operate`.
 		canOperate: (state) => state.bootstrap.can_operate !== false && state.bootstrap.canOperate !== false,
 		canAdmin: (state) => Boolean(state.bootstrap.is_admin || state.bootstrap.canAdmin),
 		/**
@@ -172,9 +227,16 @@ export const useDeviceStore = defineStore('device', {
 
 		/**
 		 * Prefer SSE for instant updates, but ALWAYS run a slow background poll
-		 * alongside it: SSE can stay "open" behind a buffering proxy while no
-		 * frames actually arrive, which reads as a frozen UI. The backup poll
-		 * keeps data honest; if SSE errors out we drop to the faster poll.
+		 * alongside it.
+		 *
+		 * The `/stream` contract is single-shot: one enriched `state` frame plus a
+		 * `retry: 5000` hint, then the server closes. EventSource reconnects by
+		 * itself roughly every 5 s, and reports each of those ordinary closes as an
+		 * `error` event — so an error is NOT evidence of a broken stream. Only a
+		 * run of reconnects that deliver no frame at all (SSE_MAX_FAILURES) counts
+		 * as failure, because a buffering proxy can hold the socket open while
+		 * nothing arrives, which reads as a frozen UI. The backup poll keeps the
+		 * data honest either way; on real failure we drop to the faster poll.
 		 */
 		startLive() {
 			// Safety-net poll runs regardless of SSE health.
@@ -194,6 +256,9 @@ export const useDeviceStore = defineStore('device', {
 					}
 				})
 				source.addEventListener('error', () => {
+					// An `error` right after a good frame is just the endpoint closing
+					// its single-shot stream; the browser will reconnect. Only count it
+					// when nothing has arrived since the last reset.
 					this.sseFailures += 1
 					if (this.sseFailures >= SSE_MAX_FAILURES) {
 						this.stopLive()
@@ -279,6 +344,9 @@ export const useDeviceStore = defineStore('device', {
 			this.loading = true
 			try {
 				this.applyState(await api.getState(this.deviceId))
+				// Only the READ error clears here. `actionError` is deliberately
+				// untouched: this runs every few seconds, and clearing it would erase
+				// a rejected command before anyone had a chance to read it.
 				this.error = null
 			} catch (err) {
 				this.error = errorMessage(err, 'Could not read the unit state')
@@ -292,6 +360,12 @@ export const useDeviceStore = defineStore('device', {
 		 * Merge a state sample, append a live timeline band on status change, and
 		 * accumulate the drawer-fill trend (there is no history endpoint for it).
 		 *
+		 * MERGE, never replace. Frames reach this from two sources (the enriched
+		 * REST poll and the SSE stream) and a frame that is missing a key must not
+		 * blank an already-rendered field: a full replace meant one thin frame
+		 * wiped `decoded_error` / `connection_health` / `maintenance_hints` and the
+		 * fault panel vanished mid-fault.
+		 *
 		 * @param {object|null} dto enriched state DTO
 		 */
 		applyState(dto) {
@@ -299,7 +373,7 @@ export const useDeviceStore = defineStore('device', {
 				return
 			}
 			const previous = this.state
-			this.state = dto
+			this.state = { ...this.state, ...dto }
 			this.lastSeenAgeS = ageSeconds(dto.updated_at)
 			const ts = Math.floor((Date.parse(dto.updated_at) || Date.now()) / 1000)
 
@@ -340,6 +414,8 @@ export const useDeviceStore = defineStore('device', {
 			const rollback = this.state ? { ...this.state } : null
 			this.actionPending = name
 			this.error = null
+			// A fresh attempt supersedes the previous failure banner.
+			this.actionError = null
 			if (this.state) {
 				const hint = { ...this.state }
 				if (OPTIMISTIC_STATUS[name]) {
@@ -360,7 +436,10 @@ export const useDeviceStore = defineStore('device', {
 				if (rollback) {
 					this.state = rollback
 				}
-				this.error = errorMessage(err, `Could not ${name.replace(/_/g, ' ')}`)
+				// The server sends real reasons now (e.g. "wait_time_invalid: must be
+				// one of 3,7,15,25,30"); the generated sentence is only a fallback.
+				const message = errorMessage(err, `Could not ${name.replace(/_/g, ' ')}`)
+				this.actionError = { action: name, message }
 				if (this.cloudDown) {
 					this.drawerOpen = true
 				}
@@ -408,19 +487,44 @@ export const useDeviceStore = defineStore('device', {
 		},
 
 		/**
+		 * Write a settings patch and VERIFY it landed.
+		 *
+		 * `POST /settings` reports per-key truth (`{ ok, settings, errors }`) and no
+		 * longer always claims success, so a green "Saved" is only honest when the
+		 * returned block actually matches what was asked for. Anything the server
+		 * refused (or silently ignored) comes back as a rejection reason.
+		 *
 		 * @param {object} patch only the keys being changed
-		 * @returns {Promise<object|null>}
+		 * @returns {Promise<{ok: boolean, settings: object, errors: object, rejected: string[]}>}
 		 */
 		async saveSettings(patch) {
 			try {
-				this.settings = await api.setSettings(patch, this.deviceId)
+				const result = await api.setSettings(patch, this.deviceId)
+				this.settings = result.settings || {}
+				this.settingsErrors = result.errors || {}
 				this.error = null
 				// Settings live in the state DTO too (night light / panel lock chips).
 				await this.loadState()
+				const rejected = rejectedKeys(patch, this.settings, this.settingsErrors)
+				for (const key of rejected) {
+					if (!this.settingsErrors[key]) {
+						// The server said nothing about this key but its value did not
+						// change — report it rather than painting a false success.
+						this.settingsErrors[key] = 'not applied by the unit'
+					}
+				}
+				return {
+					ok: result.ok !== false && rejected.length === 0,
+					settings: this.settings,
+					errors: this.settingsErrors,
+					rejected,
+				}
 			} catch (err) {
-				this.error = errorMessage(err, 'Could not save the settings')
+				const message = errorMessage(err, 'Could not save the settings')
+				this.error = message
+				this.settingsErrors = { _: message }
+				return { ok: false, settings: this.settings || {}, errors: this.settingsErrors, rejected: Object.keys(patch || {}) }
 			}
-			return this.settings
 		},
 
 		/** @returns {Promise<object|null>} bridge re-bind result */
@@ -444,26 +548,54 @@ export const useDeviceStore = defineStore('device', {
 			this.drawerOpen = false
 		},
 
-		toggleDrawer() {
-			this.drawerOpen = !this.drawerOpen
-		},
-
 		clearError() {
 			this.error = null
+		},
+
+		/** Dismiss the sticky command-failure banner (the only thing that clears it). */
+		clearActionError() {
+			this.actionError = null
 		},
 	},
 })
 
 /**
- * @param {unknown} value
- * @returns {number|null} finite number, or null for missing/unsupported readings
+ * Which keys of a settings patch did NOT take effect. Nested blocks (`sleep`) are
+ * compared key by key so a read-only sleep window is reported as one rejection
+ * rather than a diff of the whole object.
+ *
+ * @param {object} patch what was asked for
+ * @param {object} settings what the unit reports afterwards
+ * @param {object} errors per-key reasons the server already supplied
+ * @returns {string[]} rejected keys
  */
-function numberOrNull(value) {
-	if (value === null || value === undefined || value === '') {
-		return null
+function rejectedKeys(patch, settings, errors) {
+	const out = []
+	for (const [key, want] of Object.entries(patch || {})) {
+		if (errors && errors[key]) {
+			out.push(key)
+			continue
+		}
+		const got = settings ? settings[key] : undefined
+		if (want !== null && typeof want === 'object') {
+			const mismatch = Object.entries(want).some(([sub, subWant]) => {
+				const subGot = got && typeof got === 'object' ? got[sub] : undefined
+				// An empty string in the form means "unset"; treat null as equal.
+				if ((subWant === '' || subWant === null) && (subGot === '' || subGot === null || subGot === undefined)) {
+					return false
+				}
+				return String(subGot) !== String(subWant)
+			})
+			if (mismatch) {
+				out.push(key)
+			}
+			continue
+		}
+		if (got === undefined || String(got) !== String(want)) {
+			out.push(key)
+		}
 	}
-	const n = Number(value)
-	return Number.isFinite(n) ? n : null
+	return out
 }
 
 /**

@@ -40,10 +40,13 @@ export default {
 
 	computed: {
 		heading() {
-			// LR4 condition codes are short strings ("DFS", "BR"), not numbers, so
-			// only append one when it adds something to the title.
+			// LR4 condition codes are short strings ("DFS", "BR"), not numbers.
+			// `decoratedError()` already drops anything numeric, because appending the
+			// raw error register turned every fault into "Something needs a look (1)"
+			// — a number the operator cannot look up anywhere.
 			const code = this.decoded.code
-			return code ? `${this.decoded.title} (${code})` : this.decoded.title
+			const suffix = typeof code === 'string' && code.trim() !== '' ? ` (${code.trim()})` : ''
+			return `${this.decoded.title}${suffix}`
 		},
 	},
 }

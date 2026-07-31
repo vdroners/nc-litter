@@ -21,7 +21,25 @@
 		</nav>
 
 		<main class="nc-litter-main">
-			<NcNoteCard v-if="error" type="error" :heading="'Something went wrong'">
+			<!--
+				A rejected COMMAND is sticky: it stays until it is dismissed. It used to
+				share one field with read errors, and `loadState()` clears those on every
+				successful poll — so a failed command's banner was wiped within three
+				seconds, usually before anyone had read it.
+			-->
+			<NcNoteCard
+				v-if="actionError"
+				type="error"
+				:heading="actionErrorHeading"
+				data-testid="action-error">
+				{{ actionError.message }}
+				<div class="nc-litter-actions">
+					<NcButton type="tertiary" data-field="dismiss-action-error" @click="$emit('dismiss-action-error')">
+						Dismiss
+					</NcButton>
+				</div>
+			</NcNoteCard>
+			<NcNoteCard v-if="error" type="error" :heading="'Something went wrong'" data-testid="read-error">
 				{{ error }}
 			</NcNoteCard>
 			<slot />
@@ -38,7 +56,7 @@
 </template>
 
 <script>
-import { NcNoteCard } from '@nextcloud/vue'
+import { NcButton, NcNoteCard } from '@nextcloud/vue'
 
 import ConnectionHealthDrawer from './ConnectionHealthDrawer.vue'
 import StatusStrip from './StatusStrip.vue'
@@ -59,7 +77,7 @@ const TABS = [
 export default {
 	name: 'AppShell',
 
-	components: { ConnectionHealthDrawer, NcNoteCard, StatusStrip },
+	components: { ConnectionHealthDrawer, NcButton, NcNoteCard, StatusStrip },
 
 	props: {
 		state: {
@@ -94,8 +112,19 @@ export default {
 			type: Boolean,
 			default: false,
 		},
+		/** Transient read failure — the next successful poll clears it. */
 		error: {
 			type: String,
+			default: null,
+		},
+		/**
+		 * Sticky command failure: `{ action, message }`. Only the dismiss button
+		 * clears it.
+		 *
+		 * @type {object|null}
+		 */
+		actionError: {
+			type: Object,
 			default: null,
 		},
 	},
@@ -105,6 +134,14 @@ export default {
 	},
 
 	computed: {
+		/** Names the command that failed, so the banner is not just "went wrong". */
+		actionErrorHeading() {
+			const action = (this.actionError && this.actionError.action) || ''
+			return action
+				? `${action.replace(/_/g, ' ')} was not accepted`
+				: 'That command was not accepted'
+		},
+
 		/** Warms the whole page while a cycle is genuinely running. */
 		isCleaning() {
 			const key = statusKey(this.state)

@@ -23,14 +23,21 @@
  * @property {(m: object) => number} metric
  * @property {number} goal
  * @property {(m: object) => boolean} [gate] extra condition beyond metric>=goal
+ * @property {(m: object) => boolean} [needs] false when the data this badge is
+ *   scored from was never reported, so it renders "not measurable yet" instead of
+ *   a progress bar frozen at zero
  */
 
 /** Hours that count as "night" for the Night Owl badges (22:00–05:59). */
 const NIGHT_FROM_HOUR = 22
 const NIGHT_TO_HOUR = 6
 
-/** A drawer at or below this percent counts as freshly emptied. */
-const DRAWER_EMPTY_PCT = 5
+/**
+ * How far the drawer level has to FALL between two observations for a human to
+ * have emptied it. A cycle only ever adds to the drawer, so any real drop is an
+ * empty; 10 points keeps sensor jitter out.
+ */
+const DRAWER_EMPTY_DROP_PCT = 10
 /** Emptying before this fill percent is the "diligent" habit. */
 const DILIGENT_BEFORE_PCT = 90
 
@@ -43,37 +50,37 @@ const CATALOGUE = [
 	// ── Cycle odometer ──────────────────────────────────────────────────────
 	{
 		id: 'first-flush', title: 'First Flush', icon: '🚽', tier: 'bronze',
-		blurb: 'The very first clean cycle is in the books.',
+		blurb: 'At least one clean cycle on the odometer.',
 		metric: (m) => m.cyclesTotal, goal: 1,
 	},
 	{
 		id: 'ten-tumbles', title: 'Ten Tumbles', icon: '🌀', tier: 'bronze',
-		blurb: 'Ten cycles of quiet, dutiful sifting.',
+		blurb: 'Ten cycles on the odometer — quiet, dutiful sifting.',
 		metric: (m) => m.cyclesTotal, goal: 10,
 	},
 	{
 		id: 'fifty-scoops', title: 'Fifty Scoops', icon: '🎯', tier: 'bronze',
-		blurb: 'Fifty cycles down — the valet has found its rhythm.',
+		blurb: 'Fifty cycles on the odometer — the valet has found its rhythm.',
 		metric: (m) => m.cyclesTotal, goal: 50,
 	},
 	{
 		id: 'century-of-scoops', title: 'Century of Scoops', icon: '💯', tier: 'silver',
-		blurb: 'One hundred cycles of faithful service.',
+		blurb: 'One hundred cycles on the odometer.',
 		metric: (m) => m.cyclesTotal, goal: 100,
 	},
 	{
 		id: 'five-hundred-sifts', title: 'Five Hundred Sifts', icon: '🥈', tier: 'silver',
-		blurb: 'Five hundred cycles and not a complaint.',
+		blurb: 'Five hundred cycles on the odometer and not a complaint.',
 		metric: (m) => m.cyclesTotal, goal: 500,
 	},
 	{
 		id: 'thousand-tumbles', title: 'Thousand Tumbles', icon: '🏆', tier: 'gold',
-		blurb: 'A thousand cycles — a genuinely veteran valet.',
+		blurb: 'A thousand cycles on the odometer — a genuinely veteran valet.',
 		metric: (m) => m.cyclesTotal, goal: 1000,
 	},
 	{
 		id: 'litter-legend', title: 'Litter Legend', icon: '👑', tier: 'gold',
-		blurb: 'Twenty-five hundred cycles. The household could not manage without it.',
+		blurb: 'Twenty-five hundred cycles on the odometer. The household could not manage without it.',
 		metric: (m) => m.cyclesTotal, goal: 2500,
 	},
 
@@ -82,16 +89,19 @@ const CATALOGUE = [
 		id: 'drawer-duty', title: 'Drawer Duty', icon: '🗑️', tier: 'bronze',
 		blurb: 'Emptied the waste drawer for the first time.',
 		metric: (m) => m.totalEmpties, goal: 1,
+		needs: (m) => m.drawerObservations >= 2,
 	},
 	{
 		id: 'drawer-diligence', title: 'Drawer Diligence', icon: '🧻', tier: 'silver',
 		blurb: 'Emptied the drawer ten times before it reached 90% — tidy work.',
 		metric: (m) => m.tidyEmpties, goal: 10,
+		needs: (m) => m.drawerObservations >= 2,
 	},
 	{
 		id: 'drawer-devotion', title: 'Drawer Devotion', icon: '✨', tier: 'gold',
 		blurb: 'Fifty early empties. The drawer has never had to ask twice.',
 		metric: (m) => m.tidyEmpties, goal: 50,
+		needs: (m) => m.drawerObservations >= 2,
 	},
 
 	// ── The resident cat ────────────────────────────────────────────────────
@@ -151,12 +161,12 @@ const CATALOGUE = [
 	// ── Reliability ─────────────────────────────────────────────────────────
 	{
 		id: 'no-fuss', title: 'No Fuss', icon: '✅', tier: 'bronze',
-		blurb: 'Five cycles in a row with no fault at all.',
+		blurb: 'Five cycles in a row that ran clean from start to finish.',
 		metric: (m) => m.errorFreeStreak, goal: 5,
 	},
 	{
 		id: 'spotless-streak', title: 'Spotless Streak', icon: '💎', tier: 'silver',
-		blurb: 'Twenty-five consecutive cycles without a single fault.',
+		blurb: 'Twenty-five consecutive cycles that ran clean from start to finish.',
 		metric: (m) => m.errorFreeStreak, goal: 25,
 	},
 	{
@@ -188,10 +198,68 @@ function localDayKey(date) {
 
 /**
  * @param {object} cycle recorded cycle row
- * @returns {boolean} true when the cycle ended in a fault
+ * @returns {boolean} true when the unit reported an actual fault
  */
-function faulted(cycle) {
+export function faulted(cycle) {
 	return num(cycle.error_code) !== 0 || String(cycle.result || '') === 'fault'
+}
+
+/**
+ * True only when the cycle was observed running clean from start to finish.
+ *
+ * `interrupted` is NOT clean: it means the poller never saw the closing boundary,
+ * so nobody can claim the cycle succeeded. The History list badges those rows
+ * amber, and the reliability streak must agree with it — 7 of the 8 live rows are
+ * interrupted, which used to score as a 7-cycle fault-free streak.
+ *
+ * @param {object} cycle recorded cycle row
+ * @returns {boolean}
+ */
+export function completedCleanly(cycle) {
+	return !faulted(cycle) && String(cycle.result || '') === 'complete'
+}
+
+/**
+ * Count waste-drawer empties from the drawer levels the cycle log actually
+ * recorded.
+ *
+ * The old rule ("a row whose drawer_after is <= 5%") is unusable: `drawer_after`
+ * is null on almost every real row, so the count sat at 0 for ever. A drop in the
+ * level between two consecutive observations cannot happen by cycling — only a
+ * human emptying the drawer does that — so the drop IS the signal, and it works
+ * from whichever of drawer_before / drawer_after each row happens to carry.
+ *
+ * @param {Array<object>} cycles recorded rows, newest first
+ * @returns {{count: number, tidy: number, observations: number, lastTs: number}}
+ */
+export function drawerEmpties(cycles) {
+	const rows = Array.isArray(cycles) ? cycles : []
+	/** @type {Array<{ts: number, pct: number}>} oldest first */
+	const seen = []
+	for (const cycle of [...rows].reverse()) {
+		const started = num(cycle.started_at)
+		const ended = num(cycle.ended_at) || started
+		if (cycle.drawer_before !== null && cycle.drawer_before !== undefined) {
+			seen.push({ ts: started, pct: num(cycle.drawer_before) })
+		}
+		if (cycle.drawer_after !== null && cycle.drawer_after !== undefined) {
+			seen.push({ ts: ended, pct: num(cycle.drawer_after) })
+		}
+	}
+	let count = 0
+	let tidy = 0
+	let lastTs = 0
+	for (let i = 1; i < seen.length; i += 1) {
+		const drop = seen[i - 1].pct - seen[i].pct
+		if (drop >= DRAWER_EMPTY_DROP_PCT) {
+			count += 1
+			lastTs = Math.max(lastTs, seen[i].ts)
+			if (seen[i - 1].pct < DILIGENT_BEFORE_PCT) {
+				tidy += 1
+			}
+		}
+	}
+	return { count, tidy, observations: seen.length, lastTs }
 }
 
 /**
@@ -213,8 +281,6 @@ export function achievementMetrics({ state = {}, cycles = [] } = {}) {
 
 	const days = new Set()
 	let nightCycles = 0
-	let totalEmpties = 0
-	let tidyEmpties = 0
 	let errorFreeStreak = 0
 	let streakOpen = true
 	let newestFaultTs = 0
@@ -236,22 +302,20 @@ export function achievementMetrics({ state = {}, cycles = [] } = {}) {
 			oldestTs = oldestTs === 0 ? ts : Math.min(oldestTs, ts)
 		}
 
-		const after = cycle.drawer_after
-		const before = cycle.drawer_before
-		if (after !== null && after !== undefined && num(after) <= DRAWER_EMPTY_PCT) {
-			totalEmpties += 1
-			if (before !== null && before !== undefined && num(before) < DILIGENT_BEFORE_PCT) {
-				tidyEmpties += 1
-			}
-		}
-
 		if (faulted(cycle)) {
 			streakOpen = false
 			newestFaultTs = Math.max(newestFaultTs, ts)
+		}
+		// The streak counts cycles seen to COMPLETE, so an unfinished row breaks it
+		// without being counted as a fault (Clean Machine below is about faults).
+		if (streakOpen && !completedCleanly(cycle)) {
+			streakOpen = false
 		} else if (streakOpen) {
 			errorFreeStreak += 1
 		}
 	}
+
+	const empties = drawerEmpties(rows)
 
 	// "Days with no fault" = since the newest faulted cycle, else the whole
 	// recorded span. No history at all means no claim to make.
@@ -260,16 +324,26 @@ export function achievementMetrics({ state = {}, cycles = [] } = {}) {
 	const faultFreeDays = since > 0 ? Math.floor((nowS - since) / 86400) : 0
 
 	// The LR4's own lifetime odometer is the honest floor; our local log can only
-	// ever be a subset of it.
-	const cyclesTotal = Math.max(num(dto.cycles_total), num(dto.cycle_count), rows.length)
+	// ever be a subset of it. `cycles_baseline` is the odometer reading when this
+	// app was onboarded: subtracting it makes the badges about service under NC
+	// Litter rather than the unit's whole life. Nothing sends that key today (see
+	// the CATALOGUE note), so the default of 0 means these badges track the unit's
+	// lifetime total — which is what their blurbs now say.
+	const baseline = num(dto.cycles_baseline)
+	const odometer = Math.max(num(dto.cycles_total), num(dto.cycle_count))
+	// Our own recorded rows are, by definition, all post-onboarding, so they are
+	// the floor either way.
+	const cyclesTotal = Math.max(odometer - baseline, rows.length, 0)
 
 	return {
 		cyclesTotal,
+		cyclesBaseline: baseline,
 		cyclesSinceEmpty: num(dto.cycles_since_empty),
 		catWeightLbs: num(dto.cat_weight),
 		recordedCycles: rows.length,
-		totalEmpties,
-		tidyEmpties,
+		totalEmpties: empties.count,
+		tidyEmpties: empties.tidy,
+		drawerObservations: empties.observations,
 		nightCycles,
 		activeDays: days.size,
 		errorFreeStreak,
@@ -279,13 +353,14 @@ export function achievementMetrics({ state = {}, cycles = [] } = {}) {
 
 /**
  * @param {object} [input] same shape as {@link achievementMetrics}
- * @returns {Array<{id:string,title:string,blurb:string,icon:string,tier:string,unlocked:boolean,value:number,goal:number,progress:number}>}
+ * @returns {Array<{id:string,title:string,blurb:string,icon:string,tier:string,unlocked:boolean,measurable:boolean,value:number,goal:number,progress:number}>}
  */
 export function evaluateAchievements(input = {}) {
 	const m = achievementMetrics(input)
 	return CATALOGUE.map((def) => {
+		const measurable = def.needs ? Boolean(def.needs(m)) : true
 		const value = num(def.metric(m))
-		const unlocked = def.gate ? def.gate(m) : value >= def.goal
+		const unlocked = measurable && (def.gate ? def.gate(m) : value >= def.goal)
 		const progress = def.goal > 0 ? Math.max(0, Math.min(1, value / def.goal)) : (unlocked ? 1 : 0)
 		return {
 			id: def.id,
@@ -294,6 +369,9 @@ export function evaluateAchievements(input = {}) {
 			icon: def.icon,
 			tier: def.tier,
 			unlocked,
+			// False when the unit has never reported the readings this badge is
+			// scored from, so the wall can say so instead of showing "0 / 1".
+			measurable,
 			value,
 			goal: def.goal,
 			progress: unlocked ? 1 : progress,

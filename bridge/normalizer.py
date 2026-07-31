@@ -108,12 +108,18 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def _pct(value: Any) -> int | None:
-    """Clamp a 0..100 (or 0..1) fraction to an integer percentage."""
+    """Clamp an already-percentage value (0..100) to an integer percentage.
+
+    Deliberately does **not** rescale small values. Both LR4 level properties
+    are percentages already: ``waste_drawer_level`` is ``DFILevelPercent`` and
+    ``litter_level`` is ``litterLevelPercentage * 100``. An earlier revision
+    treated ``0 <= n <= 1`` as a fraction and multiplied by 100, which turned a
+    genuine 1% into 100% -- reporting an almost-empty drawer as full and, worse,
+    reporting critically-low litter as completely full. Percent in, percent out.
+    """
     n = _num(value)
     if n is None:
         return None
-    if 0.0 <= n <= 1.0:
-        n *= 100.0
     return max(0, min(100, int(round(n))))
 
 
@@ -176,11 +182,16 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
     if not is_online:
         status = STATUS_OFFLINE
     elif status is None:
-        # Unknown code: fall back to sleeping/drawer-full/ready heuristics.
+        # Unknown code: fall back to drawer-full/sleeping. With *nothing* known
+        # (no code, no sensors -- e.g. the seed DTO before the first successful
+        # poll) report ``offline``, never ``ready``: claiming a box is Ready when
+        # we have never heard from it is the one wrong answer here.
         if is_drawer_full:
             status = STATUS_DRAWER_FULL
         elif is_sleeping:
             status = STATUS_SLEEPING
+        elif code is None:
+            status = STATUS_OFFLINE
         else:
             status = STATUS_READY
     else:
@@ -204,24 +215,27 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
     drawer_level = _pct(_get(source, "waste_drawer_level"))
     litter_level = _pct(_get(source, "litter_level"))
     cat_weight = _num(_get(source, "pet_weight", _get(source, "cat_weight")))
+    # ``cycle_count`` on an LR4 *is* the lifetime odometer (verified on a real
+    # unit: 1684). There is no separate lifetime counter, so ``cycles_total``
+    # mirrors it rather than inventing one. The genuinely useful "how many
+    # cycles since the drawer filled" number is its own device property.
     cycle_count = _int_or_none(_get(source, "cycle_count"))
-    # LR4 tracks total lifetime cycles under a distinct odometer; ``cycles_total``
-    # is best-effort: try an explicit override, else fall back to cycle_count.
-    cycles_total = _int_or_none(
-        _get(source, "cycles_total", _get(source, "odometer_clean_cycles"))
-    )
+    cycles_total = _int_or_none(_get(source, "cycles_total"))
     if cycles_total is None:
         cycles_total = cycle_count
+    cycles_since_full = _int_or_none(_get(source, "cycles_after_drawer_full"))
+    cycle_capacity = _int_or_none(_get(source, "cycle_capacity"))
+    scoops_saved = _int_or_none(_get(source, "scoops_saved_count"))
 
     # --- sleep schedule -------------------------------------------------
     sleep_schedule = _sleep_schedule(source)
 
     # --- wifi -----------------------------------------------------------
-    # LR4 does not expose RSSI/SSID as first-class properties (only
-    # ``wifi_mode_status``); probe the raw ``_data`` defensively, else null.
-    rssi = _int_or_none(_get(source, "rssi"))
-    wifi_ssid = _get(source, "wifi_ssid")
-    wifi_ssid = wifi_ssid if isinstance(wifi_ssid, str) and wifi_ssid else None
+    # An LR4 exposes no RSSI and no SSID -- only ``wifi_mode_status``
+    # (ROUTER_CONNECTED / OFFLINE / ...). Reporting a null ``rssi`` invited a
+    # signal-bars widget that could never light up, so the DTO carries the mode
+    # string that actually exists instead.
+    wifi_mode = _enum_value(_get(source, "wifi_mode_status"))
 
     name = meta.get("name") or _get(source, "name") or "Litter-Robot"
 
@@ -231,21 +245,46 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
         "connected": _bool(meta.get("connected")),
         "mock": _bool(meta.get("mock")),
         "updated_at": updated_at,
+        # When the last upstream poll succeeded, and why it failed if it did.
+        # ``updated_at`` is a read timestamp; these two are the honest freshness
+        # signals, so a dead Whisker cloud can no longer look healthy.
+        "last_poll_ok_at": meta.get("last_poll_ok_at"),
+        "poll_error": meta.get("poll_error") or None,
+        "last_seen": _iso_or_none(_get(source, "last_seen")),
         "status": status,
         "status_label": status_label,
+        # The raw LR4 status code (RDY / CCP / DFS / BR / PD / ...). The
+        # normalized ``status`` above collapses every fault code to "fault", so
+        # without this the error decoder could only ever say "something needs a
+        # look" -- the specific catalog entries were unreachable.
+        "status_code": code,
         "drawer_level_pct": drawer_level,
         "litter_level_pct": litter_level,
+        "litter_level_state": _enum_value(_get(source, "litter_level_state")),
         "cat_weight": cat_weight,
         "cycle_count": cycle_count,
         "cycles_total": cycles_total,
+        "cycles_since_full": cycles_since_full,
+        "cycle_capacity": cycle_capacity,
+        "scoops_saved": scoops_saved,
         "sleeping": is_sleeping,
         "sleep_schedule": sleep_schedule,
         "night_light": _bool(_get(source, "night_light_mode_enabled",
                                   _get(source, "night_light"))),
+        "night_light_mode": _enum_value(_get(source, "night_light_mode")),
+        "night_light_brightness": _int_or_none(
+            _get(source, "night_light_brightness")),
         "panel_lock": _bool(_get(source, "panel_lock_enabled",
                                  _get(source, "panel_lock"))),
-        "rssi": rssi,
-        "wifi_ssid": wifi_ssid,
+        "panel_brightness": _enum_value(_get(source, "panel_brightness")),
+        "power_on": _bool(_get(source, "is_on", True)),
+        "power_type": _enum_value(_get(source, "power_type")),
+        "wait_time": _int_or_none(
+            _get(source, "clean_cycle_wait_time_minutes",
+                 _get(source, "wait_time"))),
+        "hopper_status": _enum_value(_get(source, "hopper_status")),
+        "hopper_removed": _bool(_get(source, "is_hopper_removed")),
+        "wifi_mode": wifi_mode,
         "error": error,
         "error_label": error_label,
         "capabilities": _capabilities(source),
@@ -255,6 +294,27 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
             "mock": _bool(meta.get("mock")),
         },
     }
+
+
+def _enum_value(value: Any) -> str | None:
+    """Flatten a pylitterbot enum (or plain string) to a JSON-safe string."""
+    if value is None:
+        return None
+    val = getattr(value, "value", value)
+    if val is None:
+        return None
+    text = str(val)
+    return text or None
+
+
+def _iso_or_none(dt: Any) -> str | None:
+    """ISO-8601 string for a datetime-ish value, else ``None``."""
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        return dt or None
+    iso = getattr(dt, "isoformat", None)
+    return iso() if callable(iso) else str(dt)
 
 
 def _sleep_schedule(source: Any) -> dict[str, Any] | None:
@@ -277,38 +337,45 @@ def _sleep_schedule(source: Any) -> dict[str, Any] | None:
     if enabled is None and start is None and end is None:
         return None
 
-    def _iso(dt: Any) -> str | None:
-        if dt is None:
-            return None
-        if isinstance(dt, str):
-            return dt
-        iso = getattr(dt, "isoformat", None)
-        return iso() if callable(iso) else str(dt)
-
     return {
         "enabled": _bool(enabled),
-        "start_time": _iso(start),
-        "end_time": _iso(end),
+        "start_time": _iso_or_none(start),
+        "end_time": _iso_or_none(end),
+        # Read-only: see ``_capabilities`` -- the LR4 sleep window can be read
+        # but not written through pylitterbot.
+        "writable": False,
     }
 
 
-def _capabilities(source: Any) -> dict[str, bool]:
+def _capabilities(source: Any) -> dict[str, Any]:
     """Capability matrix the UI uses to show/hide controls.
 
-    An LR4 supports everything in the action set; a dict source may override
-    individual flags. We report booleans, defaulting to ``True`` for the
-    LR4-standard set.
+    Reports only what a *real* LR4 can actually do through pylitterbot, checked
+    against the library rather than assumed:
+
+    * ``sleep`` is ``False``. ``LitterRobot4.set_sleep_mode`` is
+      ``raise NotImplementedError()`` and ``LitterRobot4Command`` has no sleep
+      verb, so there is no write path. The window is still *readable* via
+      ``sleep_schedule`` -- surfaced as ``sleep_schedule_read``.
+    * ``empty`` maps to ``LitterRobot4.reset()`` (a short reset press). It clears
+      errors and may spin the globe; it does **not** empty the drawer, which is
+      a manual job. Named ``reset`` here so the UI stops promising otherwise.
+    * ``wait_time_values`` is read off the class rather than hard-coded, because
+      the device rejects anything outside the set (note: 5 is *not* valid).
     """
     caps = _get(source, "capabilities")
     if isinstance(caps, dict):
-        return {k: _bool(v) for k, v in caps.items()}
+        return dict(caps)
+    wait_times = _get(source, "VALID_WAIT_TIMES") or [3, 7, 15, 25, 30]
     return {
         "clean": True,
-        "empty": True,
-        "sleep": True,
+        "reset": True,
+        "sleep": False,
+        "sleep_schedule_read": _get(source, "sleep_schedule") is not None,
         "night_light": True,
         "panel_lock": True,
         "power": True,
         "wait_time": True,
+        "wait_time_values": [int(w) for w in wait_times],
         "litter_level": _get(source, "litter_level") is not None,
     }

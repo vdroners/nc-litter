@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace OCA\NcLitter\Service;
 
 use OCA\NcLitter\AppInfo\Application;
-use OCA\NcLitter\Db\Cycle;
-use OCA\NcLitter\Db\CycleMapper;
 use OCA\NcLitter\Db\Device;
 use OCA\NcLitter\Db\DeviceMapper;
+use OCA\NcLitter\Exception\SecretDecryptException;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\IConfig;
 
@@ -23,14 +22,22 @@ class DeviceService
 	 * The LR4 command surface. Mirrors bridge/litter_manager.py ALLOWED_ACTIONS —
 	 * the bridge rejects anything else too, so the two lists must stay in step.
 	 *
+	 * `reset` is the honest name for the LR4's short-reset-press: it clears errors
+	 * and may spin the globe. `empty` and `reset_drawer` are kept only as
+	 * deprecated aliases of it, because neither ever emptied anything — the waste
+	 * drawer is emptied by hand.
+	 *
+	 * There is deliberately no `sleep_on` / `sleep_off`: pylitterbot raises
+	 * NotImplementedError for LR4 sleep, so those two were guaranteed failures.
+	 * The sleep window is read-only and changed in the Whisker app.
+	 *
 	 * @var list<string>
 	 */
 	public const ALLOWED_ACTIONS = [
 		'clean',
+		'reset',
 		'empty',
 		'reset_drawer',
-		'sleep_on',
-		'sleep_off',
 		'night_light_on',
 		'night_light_off',
 		'panel_lock_on',
@@ -40,22 +47,56 @@ class DeviceService
 		'set_wait_time',
 	];
 
+	/**
+	 * Deprecated spellings of `reset`, kept so existing callers do not break.
+	 *
+	 * @var list<string>
+	 */
+	public const RESET_ALIASES = ['empty', 'reset_drawer'];
+
+	/**
+	 * Human labels for the command surface. `empty` is NOT "empty the drawer" —
+	 * saying so promised something the command cannot do.
+	 *
+	 * @var array<string, string>
+	 */
+	public const ACTION_LABELS = [
+		'clean' => 'Start a clean cycle',
+		'reset' => 'Reset / clear errors',
+		'empty' => 'Reset / clear errors (deprecated name)',
+		'reset_drawer' => 'Reset / clear errors (deprecated name)',
+		'night_light_on' => 'Night light on',
+		'night_light_off' => 'Night light off',
+		'panel_lock_on' => 'Lock the control panel',
+		'panel_lock_off' => 'Unlock the control panel',
+		'power_on' => 'Power on',
+		'power_off' => 'Power off',
+		'set_wait_time' => 'Set the clean-cycle wait time',
+	];
+
 	/** Whisker polls the cloud, not MQTT, so "fresh" is a looser bar than a vacuum's. */
 	private const STALE_AFTER_S = 90;
 
-	/** Clean-cycle wait time the LR4 accepts, in minutes. */
-	private const WAIT_TIME_MIN = 1;
-	private const WAIT_TIME_MAX = 60;
+	/**
+	 * Clean-cycle wait times an LR4 accepts, in minutes. It is an enum, not a
+	 * range: the device rejects anything else outright — note there is no 5. Used
+	 * only when the live DTO cannot be read; the DTO's
+	 * `capabilities.wait_time_values` is authoritative.
+	 *
+	 * @var list<int>
+	 */
+	public const WAIT_TIME_VALUES = [3, 7, 15, 25, 30];
 
-	/** A drawer at or below this percent counts as freshly emptied. */
-	private const DRAWER_EMPTY_PCT = 5;
-
-	/** How far back to walk cycle history when deriving cycles_since_empty. */
-	private const CYCLE_SCAN_LIMIT = 200;
+	/**
+	 * The settings the app can write. The sleep window is NOT one of them: it is
+	 * read-only on an LR4 and is reported in the state DTO as `sleep_schedule`.
+	 *
+	 * @var list<string>
+	 */
+	public const WRITABLE_SETTINGS = ['night_light', 'panel_lock', 'wait_time'];
 
 	public function __construct(
 		private DeviceMapper $devices,
-		private CycleMapper $cycles,
 		private BridgeClient $bridge,
 		private AdminSecretCrypto $crypto,
 		private ErrorDecoderService $errors,
@@ -192,7 +233,7 @@ class DeviceService
 	 * through AdminSecretCrypto (`enc:v1:` in `creds_enc`); an empty password
 	 * leaves any existing credential untouched.
 	 *
-	 * @param array{name?:string,account_email?:string,password?:string,device_id?:string,model?:string,timezone?:string,settings?:array<string,mixed>} $data
+	 * @param array{name?:string,account_email?:string,password?:string,device_id?:string,model?:string,timezone?:string} $data
 	 */
 	public function upsertDevice(array $data, ?int $id = null): Device
 	{
@@ -229,10 +270,9 @@ class DeviceService
 		if (isset($data['password']) && (string) $data['password'] !== '') {
 			$device->setCredsEnc($this->crypto->encrypt((string) $data['password']));
 		}
-		if (isset($data['settings']) && is_array($data['settings'])) {
-			$merged = array_merge($device->decodeSettings(), $data['settings']);
-			$device->setSettingsJson(json_encode($merged, JSON_THROW_ON_ERROR));
-		}
+		// Device settings are deliberately NOT persisted here — they are read
+		// through to the unit on every request (see getSettings). `settings_json`
+		// is a reserved column with no writer.
 		$device->setUpdatedAt($now);
 
 		if ($device->getId() === null) {
@@ -244,17 +284,34 @@ class DeviceService
 	/**
 	 * Decrypted Whisker credentials for a device row.
 	 *
-	 * @return array{email:string,password:string}
+	 * `error` is set (and `password` left empty) when the stored secret will not
+	 * decrypt — a rotated instance secret, normally. That case must never be
+	 * confused with a wrong password: the caller has to tell the operator to
+	 * re-enter the credential, not to check it.
+	 *
+	 * @return array{email:string,password:string,error:?string}
 	 */
 	public function getPlainCreds(Device $device): array
 	{
-		return [
-			'email' => (string) $device->getAccountEmail(),
-			'password' => $this->crypto->decrypt((string) $device->getCredsEnc()),
-		];
+		$email = (string) $device->getAccountEmail();
+		try {
+			return [
+				'email' => $email,
+				'password' => $this->crypto->decrypt((string) $device->getCredsEnc()),
+				'error' => null,
+			];
+		} catch (SecretDecryptException) {
+			return ['email' => $email, 'password' => '', 'error' => 'credentials_undecryptable'];
+		}
 	}
 
 	// ── Live state ───────────────────────────────────────────────────────────
+
+	/** Cheap existence probe for the controllers' 404 guards. */
+	public function deviceExists(int $id): bool
+	{
+		return $this->getDevice($id) !== null;
+	}
 
 	/**
 	 * Enriched live state for the GUI: the bridge DTO plus the device identity,
@@ -268,10 +325,17 @@ class DeviceService
 		$bridge = $this->bridge->getState($deviceId);
 		$health = $this->bridge->health();
 
-		$state = is_array($bridge['body']) ? $bridge['body'] : [];
-		// The bridge wraps the DTO as { ok, state }; tolerate a flat DTO too.
-		if (isset($state['state']) && is_array($state['state'])) {
-			$state = $state['state'];
+		// Only a successful response carries device state. A failure body
+		// (`{ok:false,error:"whisker_unavailable"}`) must never be merged in as if
+		// it were the DTO: its string `error` landed in the DTO's integer `error`
+		// field and the GUI read the outage as a mechanical fault.
+		$state = [];
+		if ($bridge['ok'] && is_array($bridge['body'])) {
+			$state = $bridge['body'];
+			// The bridge wraps the DTO as { ok, state }; tolerate a flat DTO too.
+			if (isset($state['state']) && is_array($state['state'])) {
+				$state = $state['state'];
+			}
 		}
 
 		if ($device !== null) {
@@ -285,29 +349,42 @@ class DeviceService
 			$state['account_email'] = $device->getAccountEmail();
 			$state['has_creds'] = (string) $device->getCredsEnc() !== '';
 		} else {
+			// Reachable only for a caller that skipped the controllers' 404 guard
+			// (the background job, a test). Say so plainly rather than dressing the
+			// real unit's sensors up as a device that does not exist.
 			$state['device_id'] = $deviceId;
 			$state['name'] = (string) ($state['name'] ?? 'Alfred');
 			$state['has_creds'] = false;
+			$state['device_missing'] = true;
 		}
 
-		$error = (int) ($state['error'] ?? 0);
+		$error = is_numeric($state['error'] ?? null) ? (int) $state['error'] : 0;
 		$statusCode = $this->statusCodeOf($state);
-		$state['decoded_error'] = $this->errors->decode($error, 0, $statusCode);
-
-		$updatedAt = (string) ($state['updated_at'] ?? '');
-		$stale = false;
-		if ($updatedAt !== '') {
-			$ts = strtotime($updatedAt);
-			$stale = $ts !== false && (time() - $ts) > self::STALE_AFTER_S;
+		// Normalised back onto the state so `error` is always the integer flag the
+		// DTO promises, never a stray string.
+		$state['error'] = $error;
+		$state['decoded_error'] = $this->errors->decode($error, $statusCode);
+		// A bridge that answered with an empty DTO still has to yield a usable
+		// status, or the GUI has nothing to render but a blank card.
+		if (!isset($state['status']) || !is_string($state['status']) || trim($state['status']) === '') {
+			$state['status'] = 'offline';
 		}
+		if (!isset($state['status_label']) || (string) $state['status_label'] === '') {
+			$state['status_label'] = 'Offline';
+		}
+
 		$cloudUp = !empty($state['connected'])
 			|| !empty($health['body']['connected'])
 			|| !empty($state['mock']);
 
 		$state['connection_health'] = [
 			'cloud' => $cloudUp ? 'up' : 'down',
-			'stale' => $stale,
+			'stale' => $this->isStale($state),
 			'bridge_ok' => $health['ok'],
+			// The DTO's own poll bookkeeping, forwarded verbatim so the GUI can say
+			// *why* a reading is old instead of only that it is.
+			'last_poll_ok_at' => $state['last_poll_ok_at'] ?? null,
+			'poll_error' => $state['poll_error'] ?? null,
 			'last_command' => $this->audit->latest($deviceId)?->jsonSerialize() ?? new \stdClass(),
 			'recovery' => [
 				'Confirm Alfred has power and its status ring is lit.',
@@ -317,11 +394,7 @@ class DeviceService
 			],
 		];
 
-		$cyclesSinceEmpty = $this->cyclesSinceEmpty(
-			$deviceId,
-			isset($state['cycle_count']) && is_numeric($state['cycle_count']) ? (int) $state['cycle_count'] : null,
-			isset($state['cycles_total']) && is_numeric($state['cycles_total']) ? (int) $state['cycles_total'] : null,
-		);
+		$cyclesSinceEmpty = $this->cyclesSinceEmpty($state);
 		$state['cycles_since_empty'] = $cyclesSinceEmpty;
 		$state['maintenance_hints'] = $this->maintenance->hintsFor([
 			'drawer_level_pct' => isset($state['drawer_level_pct']) && is_numeric($state['drawer_level_pct'])
@@ -336,10 +409,39 @@ class DeviceService
 	}
 
 	/**
-	 * Best available LR4 condition code from a bridge DTO. The bridge normalizes
-	 * `status` (`cleaning`, `drawer_full`, ...) and collapses faults to
-	 * `error = 1`, but a raw code (`BR`, `CSF`) is passed through when present —
-	 * ErrorDecoderService resolves either spelling.
+	 * Is the newest reading too old to trust?
+	 *
+	 * Judged on `last_poll_ok_at` — the timestamp of the last *successful* upstream
+	 * poll — and never on `updated_at`, which the bridge stamps on every read and
+	 * so is always "now" no matter how long the Whisker cloud has been silent.
+	 *
+	 * `last_seen` is not a freshness signal either: a healthy unit was observed
+	 * reporting a `last_seen` three days old, so it is neither used here nor
+	 * surfaced as "last seen".
+	 *
+	 * @param array<string, mixed> $state
+	 */
+	private function isStale(array $state): bool
+	{
+		if (!empty($state['poll_error'])) {
+			return true;
+		}
+		$pollOk = $state['last_poll_ok_at'] ?? null;
+		if (!is_string($pollOk) || trim($pollOk) === '') {
+			// No successful poll has ever been recorded. That is only "not stale"
+			// when there is no upstream to poll at all (the mock).
+			return empty($state['mock']);
+		}
+		$ts = strtotime($pollOk);
+		return $ts !== false && (time() - $ts) > self::STALE_AFTER_S;
+	}
+
+	/**
+	 * Best available LR4 condition code from a bridge DTO. `status_code` is the
+	 * raw code (`RDY`, `BR`, `DFS`); `status` is the bridge's normalized spelling
+	 * (`ready`, `fault`, `drawer_full`). ErrorDecoderService resolves either, but
+	 * only the raw code reaches the specific catalog entries — a fault normalizes
+	 * to plain `fault`, which names nothing.
 	 *
 	 * @param array<string, mixed> $state
 	 */
@@ -358,37 +460,28 @@ class DeviceService
 	 * Cycles run since the waste drawer was last emptied — the metric the
 	 * `cycles_since_empty` maintenance rule reads.
 	 *
-	 * `cycle_count` is only usable here when the unit actually resets it on a
-	 * drawer reset. Observed on a real LR4 (fw 2026-07): `cycle_count` equals
-	 * the lifetime `cycles_total` odometer (1675 == 1675), i.e. it never resets,
-	 * so trusting it would peg this metric at the lifetime count and trip the
-	 * "several cycles since the last empty" hint permanently. Treat a reported
-	 * value as since-reset ONLY when it is meaningfully below the lifetime
-	 * total; otherwise derive it from our own recorded history by walking
-	 * cycles newest-first until one ends with an empty drawer.
+	 * The device keeps this count itself (`cycles_after_drawer_full`, surfaced by
+	 * the bridge as `cycles_since_full`) and resets it on a drawer reset, so it is
+	 * simply read. It must NOT be derived from anything else:
 	 *
-	 * @param int|null $reported the unit's cycle_count
-	 * @param int|null $lifetime the unit's cycles_total, when known
+	 *  * `cycle_count` on an LR4 *is* the lifetime odometer (observed 1684 ==
+	 *    `cycles_total` 1684), so using it pegged this metric at four figures.
+	 *  * counting local cycle rows — what this method used to do — grows forever
+	 *    and never falls, so the "several cycles since the last empty" hint latched
+	 *    on permanently and could never be cleared by emptying the drawer.
+	 *
+	 * When the device does not report it, the answer is null (unknown), and the
+	 * hint stays silent. An invented number is worse than no number.
+	 *
+	 * @param array<string, mixed> $state bridge DTO
 	 */
-	public function cyclesSinceEmpty(int $deviceId, ?int $reported, ?int $lifetime = null): ?int
+	public function cyclesSinceEmpty(array $state): ?int
 	{
-		if ($reported !== null && ($lifetime === null || $reported < $lifetime)) {
-			return max(0, $reported);
-		}
-		$rows = $this->cycles->findByDevice($deviceId, self::CYCLE_SCAN_LIMIT);
-		if ($rows === []) {
+		$reported = $state['cycles_since_full'] ?? null;
+		if (!is_numeric($reported)) {
 			return null;
 		}
-		$count = 0;
-		foreach ($rows as $cycle) {
-			/** @var Cycle $cycle */
-			$after = $cycle->getDrawerAfter();
-			if ($after !== null && $after <= self::DRAWER_EMPTY_PCT) {
-				break;
-			}
-			$count++;
-		}
-		return $count;
+		return max(0, (int) $reported);
 	}
 
 	// ── Commands ─────────────────────────────────────────────────────────────
@@ -396,25 +489,63 @@ class DeviceService
 	/**
 	 * Validate, dispatch and audit one operator command.
 	 *
+	 * `status` is the HTTP status the controller should answer with: 400 for a
+	 * request we (or the bridge) rejected as the caller's fault, 502 for a failure
+	 * reaching or commanding the device. Collapsing both into 400 hid a Whisker
+	 * outage behind what looked like bad input, and vice versa.
+	 *
 	 * @param array<string, mixed> $params extra arguments (`wait_time` for set_wait_time)
-	 * @return array{ok:bool,result:array<string,mixed>}
+	 * @return array{ok:bool,result:array<string,mixed>,status:int}
 	 */
 	public function runAction(int $deviceId, string $action, string $uid, array $params = []): array
 	{
 		$action = strtolower(trim($action));
 		if (!in_array($action, self::ALLOWED_ACTIONS, true)) {
 			$this->audit->write($deviceId, $uid, $action, 'rejected', ['reason' => 'unsupported_action']);
-			return ['ok' => false, 'result' => ['error' => 'unsupported_action', 'action' => $action]];
+			return $this->rejected($action, 'unsupported_action', [
+				'allowed_actions' => self::ALLOWED_ACTIONS,
+			]);
+		}
+
+		// Never command the real unit on behalf of a device row that does not
+		// exist: the bridge is bound to one robot and ignores device_id, so a stray
+		// id used to reach the hardware and then be audited under that stray id.
+		if (!$this->deviceExists($deviceId)) {
+			$this->audit->write($deviceId, $uid, $action, 'rejected', ['reason' => 'device_not_found']);
+			return $this->rejected($action, 'device_not_found', ['device_id' => $deviceId], notFound: true);
 		}
 
 		$payload = [];
 		if ($action === 'set_wait_time') {
 			$raw = $params['wait_time'] ?? $params['minutes'] ?? null;
-			if (!is_numeric($raw)) {
+			if ($raw === null || $raw === '') {
 				$this->audit->write($deviceId, $uid, $action, 'rejected', ['reason' => 'wait_time_required']);
-				return ['ok' => false, 'result' => ['error' => 'wait_time_required', 'action' => $action]];
+				return $this->rejected($action, 'wait_time_required', [
+					'wait_time_values' => $this->allowedWaitTimes($deviceId),
+				]);
 			}
-			$payload['wait_time'] = max(self::WAIT_TIME_MIN, min(self::WAIT_TIME_MAX, (int) $raw));
+			if (!is_numeric($raw)) {
+				$this->audit->write($deviceId, $uid, $action, 'rejected', ['reason' => 'wait_time_not_a_number']);
+				return $this->rejected($action, 'wait_time_not_a_number', [
+					'wait_time_values' => $this->allowedWaitTimes($deviceId),
+				]);
+			}
+			$minutes = (int) $raw;
+			$allowed = $this->allowedWaitTimes($deviceId);
+			if (!in_array($minutes, $allowed, true)) {
+				// Reject, never clamp. The LR4 accepts an enum, so clamping 5 to 5
+				// (inside the old 1..60 range) sent the device a value it refuses and
+				// the failure surfaced as an unexplained 502.
+				$this->audit->write($deviceId, $uid, $action, 'rejected', [
+					'reason' => 'wait_time_invalid',
+					'wait_time' => $minutes,
+				]);
+				return $this->rejected($action, 'wait_time_invalid: must be one of ' . implode(',', $allowed), [
+					'wait_time' => $minutes,
+					'wait_time_values' => $allowed,
+				]);
+			}
+			$payload['wait_time'] = $minutes;
 		}
 
 		$resp = $this->bridge->action($action, $deviceId, $payload);
@@ -427,16 +558,72 @@ class DeviceService
 		return [
 			'ok' => $resp['ok'],
 			'result' => $resp['body'] ?? ['error' => $resp['error'], 'status' => $resp['status']],
+			'status' => $resp['ok'] ? 200 : $this->upstreamStatus($resp['status']),
 		];
+	}
+
+	/**
+	 * @param array<string, mixed> $extra
+	 * @return array{ok:bool,result:array<string,mixed>,status:int}
+	 */
+	private function rejected(string $action, string $error, array $extra = [], bool $notFound = false): array
+	{
+		return [
+			'ok' => false,
+			'result' => ['error' => $error, 'action' => $action] + $extra,
+			'status' => $notFound ? 404 : 400,
+		];
+	}
+
+	/**
+	 * The bridge already separates caller error (400) from device/cloud failure
+	 * (502); honour whichever it sent, and treat a transport failure (status 0) as
+	 * an upstream problem.
+	 */
+	private function upstreamStatus(int $bridgeStatus): int
+	{
+		return $bridgeStatus === 400 ? 400 : 502;
+	}
+
+	/**
+	 * Wait times this unit will accept. The live DTO's
+	 * `capabilities.wait_time_values` is authoritative (it is read off the bound
+	 * robot, so a firmware change is picked up without a release); WAIT_TIME_VALUES
+	 * is the offline fallback when the bridge cannot be reached.
+	 *
+	 * @return list<int>
+	 */
+	public function allowedWaitTimes(int $deviceId): array
+	{
+		$resp = $this->bridge->getState($deviceId);
+		$body = is_array($resp['body'] ?? null) ? $resp['body'] : [];
+		$state = is_array($body['state'] ?? null) ? $body['state'] : $body;
+		$caps = is_array($state['capabilities'] ?? null) ? $state['capabilities'] : [];
+		$values = $caps['wait_time_values'] ?? null;
+		if (!is_array($values)) {
+			return self::WAIT_TIME_VALUES;
+		}
+		$clean = [];
+		foreach ($values as $v) {
+			if (is_numeric($v)) {
+				$clean[] = (int) $v;
+			}
+		}
+		return $clean !== [] ? array_values(array_unique($clean)) : self::WAIT_TIME_VALUES;
 	}
 
 	// ── Device settings (proxied to the bridge) ──────────────────────────────
 
 	/**
-	 * LR4 settings the app manages: night light, panel lock, clean-cycle wait
-	 * time and the sleep window.
+	 * LR4 settings, read straight through to the device every time.
 	 *
-	 * @return array{ok:bool,settings:array<string,mixed>,error:?string}
+	 * Nothing is cached in `nc_litter_devices.settings_json` any more. The old
+	 * mirror was written only on a successful save and never refreshed, so after
+	 * one change made in the Whisker app it disagreed with the unit indefinitely
+	 * (the row said wait_time 3 while the device said 7) and there was no way to
+	 * tell which of the two the GUI had shown you.
+	 *
+	 * @return array{ok:bool,settings:array<string,mixed>,errors:array<string,string>,error:?string}
 	 */
 	public function getSettings(int $deviceId): array
 	{
@@ -445,58 +632,91 @@ class DeviceService
 		return [
 			'ok' => $resp['ok'],
 			'settings' => is_array($body['settings'] ?? null) ? $body['settings'] : $body,
+			'errors' => [],
 			'error' => $resp['error'],
 		];
 	}
 
 	/**
+	 * Apply a settings patch and report the truth about each key.
+	 *
+	 * The bridge answers `{ok, settings, errors:{key:reason}}` with HTTP 200 (all
+	 * applied) / 207 (some applied) / 502 (none applied). A 207 is still a 2xx, so
+	 * transport success alone must not be read as "saved" — the per-key `errors`
+	 * map decides, and locally rejected keys are merged into the same map so the
+	 * caller sees one verdict per key.
+	 *
 	 * @param array<string, mixed> $patch only present keys are applied
-	 * @return array{ok:bool,settings:array<string,mixed>,error:?string}
+	 * @return array{ok:bool,settings:array<string,mixed>,errors:array<string,string>,error:?string}
 	 */
 	public function setSettings(int $deviceId, array $patch): array
 	{
-		$clean = $this->sanitizeSettings($patch);
+		[$clean, $localErrors] = $this->sanitizeSettings($deviceId, $patch);
 		if ($clean === []) {
-			return ['ok' => false, 'settings' => [], 'error' => 'no_supported_settings'];
+			return [
+				'ok' => false,
+				'settings' => [],
+				'errors' => $localErrors,
+				'error' => $localErrors !== [] ? (string) reset($localErrors) : 'no_supported_settings',
+			];
 		}
 		$resp = $this->bridge->setSettings($clean, $deviceId);
 		$body = is_array($resp['body'] ?? null) ? $resp['body'] : [];
 		$settings = is_array($body['settings'] ?? null) ? $body['settings'] : $body;
-
-		// Mirror the confirmed settings onto the row so the GUI can paint before
-		// the first bridge round-trip completes.
-		if ($resp['ok'] && $settings !== []) {
-			$device = $this->getDevice($deviceId);
-			if ($device !== null) {
-				$this->upsertDevice(['settings' => $settings], (int) $device->getId());
-			}
+		$bridgeErrors = [];
+		foreach (is_array($body['errors'] ?? null) ? $body['errors'] : [] as $key => $reason) {
+			$bridgeErrors[(string) $key] = (string) $reason;
 		}
 
-		return ['ok' => $resp['ok'], 'settings' => $settings, 'error' => $resp['error']];
+		$errors = $localErrors + $bridgeErrors;
+		$applied = $resp['ok'] && ($body['ok'] ?? true) === true && $bridgeErrors === [];
+		return [
+			'ok' => $applied && $errors === [],
+			'settings' => $settings,
+			'errors' => $errors,
+			'error' => $resp['error'] ?? ($errors !== [] ? (string) reset($errors) : null),
+		];
 	}
 
 	/**
-	 * Keep only the four settings the LR4 supports, coerced to the bridge's
-	 * expected types.
+	 * Split a patch into the keys the LR4 will accept and a per-key reason for the
+	 * ones it will not.
+	 *
+	 * `sleep` is refused outright: pylitterbot has no LR4 sleep write path, so the
+	 * schedule can only be changed in the Whisker app. The old code pretended
+	 * otherwise, forwarding `sleep.enabled` (and silently dropping the start/end
+	 * times the operator had just typed) to a command that could never succeed.
 	 *
 	 * @param array<string, mixed> $patch
-	 * @return array<string, mixed>
+	 * @return array{0:array<string,mixed>,1:array<string,string>}
 	 */
-	private function sanitizeSettings(array $patch): array
+	private function sanitizeSettings(int $deviceId, array $patch): array
 	{
 		$out = [];
+		$errors = [];
 		foreach (['night_light', 'panel_lock'] as $flag) {
 			if (array_key_exists($flag, $patch)) {
 				$out[$flag] = filter_var($patch[$flag], FILTER_VALIDATE_BOOLEAN);
 			}
 		}
-		if (isset($patch['wait_time']) && is_numeric($patch['wait_time'])) {
-			$out['wait_time'] = max(self::WAIT_TIME_MIN, min(self::WAIT_TIME_MAX, (int) $patch['wait_time']));
+		if (array_key_exists('wait_time', $patch)) {
+			$raw = $patch['wait_time'];
+			if (!is_numeric($raw)) {
+				$errors['wait_time'] = 'wait_time_not_a_number';
+			} else {
+				$allowed = $this->allowedWaitTimes($deviceId);
+				$minutes = (int) $raw;
+				if (!in_array($minutes, $allowed, true)) {
+					$errors['wait_time'] = 'wait_time_invalid: must be one of ' . implode(',', $allowed);
+				} else {
+					$out['wait_time'] = $minutes;
+				}
+			}
 		}
-		if (isset($patch['sleep']) && is_array($patch['sleep'])) {
-			$out['sleep'] = ['enabled' => filter_var($patch['sleep']['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN)];
+		if (array_key_exists('sleep', $patch)) {
+			$errors['sleep'] = 'sleep_read_only: the LR4 sleep schedule can only be changed in the Whisker app';
 		}
-		return $out;
+		return [$out, $errors];
 	}
 
 	// ── Whisker account onboarding ───────────────────────────────────────────
@@ -563,6 +783,16 @@ class DeviceService
 			return ['ok' => false, 'error' => 'device_not_configured'];
 		}
 		$creds = $this->getPlainCreds($device);
+		if ($creds['error'] !== null) {
+			// Distinct from a wrong password: nothing the operator types at the
+			// login prompt can fix a secret we can no longer read.
+			return [
+				'ok' => false,
+				'error' => $creds['error'],
+				'message' => 'The stored Whisker credentials could not be decrypted — re-enter them in Admin settings.',
+				'device_id' => (int) $device->getId(),
+			];
+		}
 		if ($creds['email'] === '' || $creds['password'] === '') {
 			return ['ok' => false, 'error' => 'incomplete_credentials', 'device_id' => (int) $device->getId()];
 		}
@@ -606,6 +836,11 @@ class DeviceService
 			'device' => $this->getPrimaryDevice()?->jsonSerialize(),
 			'alfred' => $this->getAlfredConfig(),
 			'allowed_actions' => self::ALLOWED_ACTIONS,
+			'action_labels' => self::ACTION_LABELS,
+			'reset_aliases' => self::RESET_ALIASES,
+			'writable_settings' => self::WRITABLE_SETTINGS,
+			'wait_time_values' => self::WAIT_TIME_VALUES,
+			'sleep_writable' => false,
 		];
 	}
 }

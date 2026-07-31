@@ -3,8 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
 	achievementMetrics,
 	achievementSummary,
+	completedCleanly,
+	drawerEmpties,
 	evaluateAchievements,
 } from '@/utils/achievements.js'
+
+import { cycleRows, stateDto } from './fixtures.js'
 
 const DAY_S = 86400
 const nowS = Math.floor(Date.now() / 1000)
@@ -182,5 +186,96 @@ describe('achievement catalogue', () => {
 		const a = evaluateAchievements()
 		expect(Array.isArray(a)).toBe(true)
 		expect(a.every((x) => x.unlocked === false)).toBe(true)
+	})
+})
+
+// ─── The REAL data ────────────────────────────────────────────────────────────
+// Everything below is fed the captured DTO and cycle log rather than an invented
+// one. All eight live rows have `drawer_after: null`, seven of them are
+// `result: 'interrupted'`, and the unit's odometer reads 1,684 on a
+// freshly-installed app.
+
+describe('against the live unit', () => {
+	const LIVE = { state: stateDto(), cycles: cycleRows() }
+
+	it('does not claim a cycle succeeded when it was never seen to finish', () => {
+		const rows = cycleRows()
+		expect(rows.filter(completedCleanly)).toHaveLength(1)
+		expect(rows.filter((c) => c.result === 'interrupted')).toHaveLength(7)
+		// The reliability streak used to count all seven interrupted rows as
+		// fault-free, which is what let the donut say "8 of 8" while the History
+		// list badged seven of them INTERRUPTED.
+		expect(achievementMetrics(LIVE).errorFreeStreak).toBe(0)
+		expect(byId(evaluateAchievements(LIVE))['no-fuss'].unlocked).toBe(false)
+	})
+
+	it('derives drawer empties from the observed level drop, not drawer_after', () => {
+		// Every row's `drawer_after` is null bar one (15%), so the old
+		// "drawer_after <= 5" rule pinned the count at 0 for ever and "Drawer
+		// empties: 0" showed for ever. The level fell 15% -> 4% between the two
+		// days, which only a human emptying the drawer can do.
+		const empties = drawerEmpties(cycleRows())
+		expect(empties.count).toBe(1)
+		expect(empties.tidy).toBe(1)
+		expect(empties.observations).toBeGreaterThanOrEqual(2)
+		expect(empties.lastTs).toBeGreaterThan(0)
+
+		const m = achievementMetrics(LIVE)
+		expect(m.totalEmpties).toBe(1)
+		const a = byId(evaluateAchievements(LIVE))
+		expect(a['drawer-duty'].unlocked).toBe(true)
+		expect(a['drawer-duty'].measurable).toBe(true)
+		expect(a['drawer-diligence'].unlocked).toBe(false)
+		expect(a['drawer-diligence'].value).toBe(1)
+	})
+
+	it('marks the drawer badges unmeasurable when no level was ever recorded', () => {
+		const blind = cycleRows().map((c) => ({ ...c, drawer_before: null, drawer_after: null }))
+		const a = byId(evaluateAchievements({ state: stateDto(), cycles: blind }))
+		for (const id of ['drawer-duty', 'drawer-diligence', 'drawer-devotion']) {
+			expect(a[id].unlocked).toBe(false)
+			// Renders "No readings recorded for this yet." instead of a bar at 0.
+			expect(a[id].measurable).toBe(false)
+		}
+	})
+
+	it('scores the odometer badges against the unit lifetime it is honest about', () => {
+		const a = byId(evaluateAchievements(LIVE))
+		// 1,684 lifetime cycles genuinely are on the odometer, and the blurbs now say
+		// "on the odometer" instead of claiming NC Litter watched the first one.
+		expect(achievementMetrics(LIVE).cyclesTotal).toBe(1684)
+		expect(a['first-flush'].unlocked).toBe(true)
+		expect(a['first-flush'].blurb).toMatch(/odometer/)
+		expect(a['first-flush'].blurb).not.toMatch(/very first/)
+		expect(a['thousand-tumbles'].unlocked).toBe(true)
+		expect(a['litter-legend'].unlocked).toBe(false)
+	})
+
+	it('measures service since onboarding when a baseline is supplied', () => {
+		// Nothing sends `cycles_baseline` today; when the backend does, the same
+		// badges become install-relative with no other change.
+		const scoped = { state: stateDto({ cycles_baseline: 1684 }), cycles: cycleRows() }
+		expect(achievementMetrics(scoped).cyclesTotal).toBe(8) // the recorded-row floor
+		const a = byId(evaluateAchievements(scoped))
+		expect(a['thousand-tumbles'].unlocked).toBe(false)
+		expect(a['ten-tumbles'].unlocked).toBe(false)
+	})
+
+	it('awards the weight badge from the real 4.99 lb reading', () => {
+		const a = byId(evaluateAchievements(LIVE))
+		expect(a['weigh-in'].unlocked).toBe(true)
+		expect(a['featherweight'].unlocked).toBe(true) // 4.99 lb
+		expect(a['house-panther'].unlocked).toBe(false)
+		expect(a['certified-chonk'].unlocked).toBe(false)
+	})
+
+	it('keeps every badge shape renderable on real data', () => {
+		for (const a of evaluateAchievements(LIVE)) {
+			expect(typeof a.measurable).toBe('boolean')
+			expect(a.progress).toBeGreaterThanOrEqual(0)
+			expect(a.progress).toBeLessThanOrEqual(1)
+		}
+		const s = achievementSummary(evaluateAchievements(LIVE))
+		expect(s.unlocked).toBeLessThanOrEqual(s.total)
 	})
 })

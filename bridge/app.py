@@ -6,9 +6,9 @@ Nextcloud PHP app (``BridgeClient``) proxies every call, so the browser never
 talks to the Whisker cloud or this process directly. There is no auth on the
 bridge itself; Docker-network isolation + the PHP layer handle access.
 
-The HTTP contract here is the drop-in sibling of the nc-roomba Node bridge:
-identical route names and JSON envelope shapes so ``BridgeClient`` needs no
-per-backend branching.
+Routes and JSON envelope shapes are fixed by ``BridgeClient``'s expectations
+(``/health``, ``/state``, ``/stream``, ``/action/{name}``, ``/settings``), so the
+PHP side needs no per-backend branching.
 
 Env:
   PORT=8080                bind port
@@ -116,8 +116,14 @@ async def action(name: str, request: Request) -> Response:
     body = await _json_body(request)
     kwargs = {k: v for k, v in body.items() if k != "robot_id"}
     result = await manager.run_action(name, **kwargs)
-    status = 200 if result.get("ok") else 502
-    return JSONResponse(result, status_code=status)
+    if result.get("ok"):
+        return JSONResponse(result, status_code=200)
+    # A rejected *request* is the caller's fault (400); a failure reaching or
+    # commanding the device is upstream (502). Lumping both into 502 hid bad
+    # input behind what looked like a cloud outage.
+    error = str(result.get("error") or "")
+    caller_fault = error.startswith(("wait_time_", "unsupported_action"))
+    return JSONResponse(result, status_code=400 if caller_fault else 502)
 
 
 # ---------------------------------------------------------------------------
@@ -130,9 +136,21 @@ async def get_settings() -> JSONResponse:
 
 @app.post("/settings")
 async def set_settings(request: Request) -> JSONResponse:
+    """Apply a settings patch and report the truth about each key.
+
+    ``manager.set_settings`` returns ``{ok, settings, errors}``; the response
+    used to hard-code ``ok: True`` and drop ``errors`` on the floor, so the app
+    showed "Saved" for writes that had failed. A partial failure is a 207 so a
+    caller can tell "nothing applied" from "some keys applied".
+    """
     body = await _json_body(request)
-    settings = await manager.set_settings(body)
-    return JSONResponse({"ok": True, "settings": settings})
+    result = await manager.set_settings(body)
+    if result.get("ok"):
+        return JSONResponse(result, status_code=200)
+    applied_none = len(result.get("errors") or {}) >= len(
+        [k for k in body if k in ("night_light", "panel_lock", "wait_time", "sleep")]
+    )
+    return JSONResponse(result, status_code=502 if applied_none else 207)
 
 
 # ---------------------------------------------------------------------------

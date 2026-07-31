@@ -26,6 +26,12 @@ use OCP\AppFramework\Db\Entity;
  * @method void setCreatedAt(int $createdAt)
  * @method int getUpdatedAt()
  * @method void setUpdatedAt(int $updatedAt)
+ *
+ * `settings_json` is a RESERVED column with no writer. It once cached the LR4's
+ * night-light / panel-lock / wait-time settings, but nothing refreshed the cache,
+ * so it drifted from the device and was never trustworthy. Settings are now read
+ * through to the unit on every request; the column is left in place rather than
+ * migrated away, and is deliberately not serialised.
  */
 class Device extends Entity implements JsonSerializable
 {
@@ -54,20 +60,9 @@ class Device extends Entity implements JsonSerializable
 			'device_id' => (string) $this->deviceId,
 			'model' => (string) $this->model,
 			'timezone' => (string) $this->timezone,
-			'settings' => $this->decodeSettings(),
 			'created_at' => (int) $this->createdAt,
 			'updated_at' => (int) $this->updatedAt,
 			'has_creds' => $this->credsEnc !== null && $this->credsEnc !== '',
 		];
-	}
-
-	/** @return array<string, mixed> */
-	public function decodeSettings(): array
-	{
-		if ($this->settingsJson === null || $this->settingsJson === '') {
-			return [];
-		}
-		$data = json_decode((string) $this->settingsJson, true);
-		return is_array($data) ? $data : [];
 	}
 }

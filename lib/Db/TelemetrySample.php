@@ -30,12 +30,15 @@ use OCP\AppFramework\Db\Entity;
  * @method void setNightLight(?int $nightLight)
  * @method int|null getPanelLock()
  * @method void setPanelLock(?int $panelLock)
- * @method int|null getRssi()
- * @method void setRssi(?int $rssi)
  * @method int getErrorCode()
  * @method void setErrorCode(int $errorCode)
  * @method string|null getPayloadJson()
  * @method void setPayloadJson(?string $payloadJson)
+ *
+ * `rssi` is a RESERVED column with no writer and is not serialised: a Litter-Robot
+ * 4 reports neither a signal strength nor an SSID (`wifi_mode` is all it offers,
+ * and that reads "OFF" on a healthy unit). The property stays so QBMapper can map
+ * the column without a migration to drop it.
  */
 class TelemetrySample extends Entity implements JsonSerializable
 {
@@ -85,7 +88,6 @@ class TelemetrySample extends Entity implements JsonSerializable
 			'sleeping' => $this->sleeping !== null ? (bool) $this->sleeping : null,
 			'night_light' => $this->nightLight !== null ? (bool) $this->nightLight : null,
 			'panel_lock' => $this->panelLock !== null ? (bool) $this->panelLock : null,
-			'rssi' => $this->rssi !== null ? (int) $this->rssi : null,
 			'error_code' => (int) $this->errorCode,
 		];
 	}

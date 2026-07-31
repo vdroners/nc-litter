@@ -67,7 +67,7 @@ class Version000001Date20260725110000 extends SimpleMigrationStep
 			$changed = true;
 		}
 
-		// ── Cycle phase events (Ready -> Cycling -> Dumping -> Ready) ──────────
+		// ── Cycle phase events (ready -> cleaning -> settling -> ready) ────────
 		if (!$schema->hasTable('nc_litter_cycle_events')) {
 			$t = $schema->createTable('nc_litter_cycle_events');
 			$t->addColumn('id', Types::BIGINT, ['autoincrement' => true, 'notnull' => true, 'length' => 20]);
@@ -96,6 +96,9 @@ class Version000001Date20260725110000 extends SimpleMigrationStep
 			$t->addColumn('sleeping', Types::SMALLINT, ['notnull' => false]);
 			$t->addColumn('night_light', Types::SMALLINT, ['notnull' => false]);
 			$t->addColumn('panel_lock', Types::SMALLINT, ['notnull' => false]);
+			// RESERVED, never written: a Litter-Robot 4 reports no signal strength
+			// (and no SSID). Kept so no migration is needed to drop it; the writer in
+			// CycleService deliberately leaves it null.
 			$t->addColumn('rssi', Types::INTEGER, ['notnull' => false]);
 			$t->addColumn('error_code', Types::INTEGER, ['notnull' => true, 'default' => 0]);
 			$t->addColumn('payload_json', Types::TEXT, ['notnull' => false]);

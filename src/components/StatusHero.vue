@@ -44,15 +44,9 @@
 				<dd>{{ cyclesText }}</dd>
 			</div>
 
-			<!-- Wi-Fi signal bars -->
-			<div class="nc-litter-hero__fact nc-litter-hero__fact--gauge" data-field="rssi">
-				<span class="nc-litter-bars" :class="rssiClass(rssi)" :title="rssiShort" aria-hidden="true">
-					<i v-for="n in 4" :key="n" :class="{ on: n <= bars }" />
-				</span>
-				<div class="nc-litter-hero__gaugetext">
-					<dt>Wi-Fi</dt>
-					<dd :class="rssiClass(rssi)">{{ rssiShort }}</dd>
-				</div>
+			<div class="nc-litter-hero__fact" data-field="wait-time">
+				<dt>Wait time</dt>
+				<dd>{{ waitTimeText }}</dd>
 			</div>
 
 			<div class="nc-litter-hero__fact" data-field="sleep-window">
@@ -83,25 +77,13 @@ import {
 	drawerLevelClass,
 	litterLabel,
 	litterLevelClass,
-	rssiClass,
-	signalBars,
+	numberOrNull,
 	sleepWindowLabel,
 	statusDetail,
 	statusLabel,
 	statusTone,
+	waitTimeLabel,
 } from '../utils/format.js'
-
-/**
- * @param {unknown} value
- * @returns {number|null} finite number, or null for an unreported reading
- */
-function numberOrNull(value) {
-	if (value === null || value === undefined || value === '') {
-		return null
-	}
-	const n = Number(value)
-	return Number.isFinite(n) ? n : null
-}
 
 /**
  * Zone-A "at a glance" hero: one integrated card answering "is the unit OK and
@@ -125,7 +107,7 @@ export default {
 		},
 		fallbackName: {
 			type: String,
-			default: 'Alfred',
+			default: 'Litter-Robot 4',
 		},
 	},
 
@@ -158,17 +140,8 @@ export default {
 		litterTone() {
 			return litterLevelClass(this.litterPct) || 'idle'
 		},
-		rssi() {
-			return this.state ? this.state.rssi : null
-		},
-		rssiShort() {
-			if (this.rssi === null || this.rssi === undefined) {
-				return '—'
-			}
-			return `${this.rssi} dBm`
-		},
-		bars() {
-			return signalBars(this.rssi)
+		waitTimeText() {
+			return waitTimeLabel(numberOrNull(this.state && this.state.wait_time))
 		},
 		cyclesText() {
 			const total = numberOrNull(this.state && this.state.cycles_total)
@@ -178,8 +151,11 @@ export default {
 		sleepText() {
 			const schedule = (this.state && this.state.sleep_schedule) || null
 			const label = sleepWindowLabel(schedule)
+			// Two separate facts: the configured window, and whether it is resting at
+			// this moment. A unit can be awake with a window set, and (briefly) the
+			// other way round.
 			if (this.state && this.state.sleeping) {
-				return label === '—' ? 'Resting now' : `Resting · ${label}`
+				return label === '—' || label === 'Off' ? 'Resting now' : `${label} · resting now`
 			}
 			return label
 		},
@@ -197,7 +173,6 @@ export default {
 		drawerLevelClass,
 		litterLabel,
 		litterLevelClass,
-		rssiClass,
 	},
 }
 </script>

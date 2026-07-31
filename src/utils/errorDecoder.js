@@ -61,13 +61,17 @@ export function faultSeverity(state) {
  * honest placeholder when the catalog has no row for this condition.
  *
  * @param {object|null} state enriched state DTO
- * @returns {{show:boolean,severity:string,code:(string|number),kind:string,title:string,detail:string,action:string}}
+ * @returns {{show:boolean,severity:string,code:string,kind:string,title:string,detail:string,action:string}}
  */
 export function decoratedError(state) {
 	const decoded = (state && state.decoded_error) || {}
 	const error = Number((state && state.error) || 0)
 	const key = statusKey(state)
-	const code = decoded.code ?? (error !== 0 ? error : key)
+	// Prefer the LR4's own short code (DFS / BR / PD …) from the DTO. A numeric
+	// error register value is an internal number an operator cannot look up, so it
+	// is dropped rather than printed in the heading.
+	const rawCode = decoded.status_code || (state && state.status_code) || decoded.code
+	const code = typeof rawCode === 'string' && rawCode.trim() !== '' ? rawCode.trim() : ''
 	const kind = decoded.kind
 		|| (error !== 0 ? 'error' : (ATTENTION_STATUSES.includes(key) ? 'not_ready' : 'ok'))
 	const show = hasFault(state) && !OK_KINDS.includes(kind)

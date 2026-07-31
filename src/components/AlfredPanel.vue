@@ -30,12 +30,14 @@
 import { getAlfredAlerts } from '../services/api.js'
 import { timeLabel } from '../utils/format.js'
 
-/** The commands the litter OpenClaw skill answers to. */
+/**
+ * The commands the litter OpenClaw skill answers to. No `sleep` verb: the LR4 has
+ * no sleep write path, so the action (and the Talk verb) no longer exist.
+ */
 const COMMANDS = [
 	'@alfred litter status',
 	'@alfred litter clean',
-	'@alfred litter empty',
-	'@alfred litter sleep',
+	'@alfred litter reset',
 ]
 
 /**

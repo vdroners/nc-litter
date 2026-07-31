@@ -18,49 +18,40 @@ vi.mock('@/services/api.js', () => ({
 import * as api from '@/services/api.js'
 import { useDeviceStore } from '@/store/device.js'
 
-/**
- * @param {object} [overrides]
- * @returns {object} an enriched state DTO shaped like the PHP response
- */
-function stateDto(overrides = {}) {
-	return {
-		device_id: 1,
-		whisker_device_id: 'LR4-ABC123',
-		name: 'Alfred',
-		model: 'Litter-Robot 4',
-		connected: true,
-		mock: false,
-		updated_at: new Date().toISOString(),
-		status: 'ready',
-		status_label: null,
-		drawer_level_pct: 42,
-		litter_level_pct: 70,
-		cat_weight: 11.4,
-		cycle_count: 12,
-		cycles_total: 1240,
-		cycles_since_empty: 12,
-		sleeping: false,
-		sleep_schedule: { enabled: true, start_time: '22:00', end_time: '06:00' },
-		night_light: false,
-		panel_lock: false,
-		rssi: -52,
-		wifi_ssid: 'Sheela 6',
-		error: 0,
-		error_label: null,
-		decoded_error: { code: 0, kind: 'ok', title: '', detail: '', action: '' },
-		connection_health: {
-			cloud: 'up',
-			stale: false,
-			bridge_ok: true,
-			last_command: {},
-			recovery: ['Confirm the unit has power.'],
-		},
-		maintenance_hints: [],
-		capabilities: { clean: true, empty: true, wait_time: true },
-		bridge: { version: '0.1.0', uptime_s: 10, mock: false },
-		...overrides,
-	}
-}
+import {
+	ALLOWED_ACTIONS,
+	REMOVED_DTO_KEYS,
+	STATE_DTO_KEYS,
+	cycleRows,
+	settingsBlock,
+	stateDto,
+} from './fixtures.js'
+
+describe('the state DTO fixture matches the documented contract', () => {
+	it('carries exactly the keys the backend sends', () => {
+		expect(Object.keys(stateDto()).sort()).toEqual([...STATE_DTO_KEYS].sort())
+	})
+
+	it('does not resurrect the removed Wi-Fi keys', () => {
+		const dto = stateDto()
+		for (const key of REMOVED_DTO_KEYS) {
+			expect(key in dto).toBe(false)
+		}
+	})
+
+	it('reports sleep as unsupported, because pylitterbot cannot write it', () => {
+		expect(stateDto().capabilities.sleep).toBe(false)
+		expect(settingsBlock().sleep_writable).toBe(false)
+		expect(ALLOWED_ACTIONS).not.toContain('sleep_on')
+		expect(ALLOWED_ACTIONS).not.toContain('sleep_off')
+	})
+
+	it('reports `reset` rather than the removed `empty` capability', () => {
+		const caps = stateDto().capabilities
+		expect(caps.reset).toBe(true)
+		expect('empty' in caps).toBe(false)
+	})
+})
 
 describe('device store', () => {
 	beforeEach(() => {
@@ -71,7 +62,7 @@ describe('device store', () => {
 
 	it('loads state on init without starting timers', async () => {
 		const store = useDeviceStore()
-		await store.init({ is_admin: true, device: { id: 1, name: 'Alfred' } }, { live: false })
+		await store.init({ is_admin: true, device: { id: 1, name: 'Poop Roller' } }, { live: false })
 
 		expect(api.getState).toHaveBeenCalledWith(1)
 		expect(store.connected).toBe(true)
@@ -93,11 +84,10 @@ describe('device store', () => {
 		await store.init({}, { live: false })
 
 		expect(store.status).toBe('ready')
-		expect(store.drawerPct).toBe(42)
-		expect(store.litterPct).toBe(70)
-		expect(store.catWeight).toBeCloseTo(11.4, 5)
-		expect(store.cyclesTotal).toBe(1240)
-		expect(store.cyclesSinceEmpty).toBe(12)
+		expect(store.drawerPct).toBe(7)
+		expect(store.litterPct).toBe(90)
+		expect(store.catWeight).toBeCloseTo(4.99, 5)
+		expect(store.cyclesSinceEmpty).toBe(8)
 		expect(store.sleeping).toBe(false)
 		expect(store.nightLight).toBe(false)
 		expect(store.panelLock).toBe(false)
@@ -107,11 +97,54 @@ describe('device store', () => {
 		expect(store.hints).toEqual([])
 	})
 
+	it('takes the capability block and wait-time values from the unit', async () => {
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+
+		expect(store.capabilities.clean).toBe(true)
+		expect(store.capabilities.reset).toBe(true)
+		expect(store.capabilities.sleep).toBe(false)
+		// 25 was missing from the hardcoded list, so a unit set to 25 min in the
+		// Whisker app had no matching option.
+		expect(store.waitTimeValues).toEqual([3, 7, 15, 25, 30])
+		expect(store.sleepWritable).toBe(false)
+	})
+
 	it('reports an unsupported reading as null rather than 0', () => {
 		const store = useDeviceStore()
 		store.applyState(stateDto({ litter_level_pct: null, cat_weight: null }))
 		expect(store.litterPct).toBe(null)
 		expect(store.catWeight).toBe(null)
+	})
+
+	// ── F2: applyState MERGES ────────────────────────────────────────────────
+	it('merges a thin frame instead of blanking the fields it omits', () => {
+		const store = useDeviceStore()
+		store.applyState(stateDto({
+			status: 'fault',
+			error: 1,
+			decoded_error: { code: 1, kind: 'error', title: 'Bonnet removed', detail: 'Refit it.', action: 'Refit the bonnet.', status_code: 'BR' },
+		}))
+		expect(store.decodedError.title).toBe('Bonnet removed')
+		expect(store.state.connection_health.cloud).toBe('up')
+
+		// A frame with no decoded_error / connection_health / maintenance_hints at
+		// all — e.g. a raw bridge shape, or a trimmed SSE frame. A full replace made
+		// the fault panel and the health drawer go blank mid-fault.
+		store.applyState({
+			device_id: 1,
+			name: 'Poop Roller',
+			connected: true,
+			status: 'fault',
+			error: 1,
+			updated_at: new Date().toISOString(),
+		})
+
+		expect(store.state.decoded_error.title).toBe('Bonnet removed')
+		expect(store.decodedError.title).toBe('Bonnet removed')
+		expect(store.state.connection_health.cloud).toBe('up')
+		expect(store.state.capabilities.clean).toBe(true)
+		expect(store.state.status).toBe('fault')
 	})
 
 	it('records a timeline band on every status change', () => {
@@ -135,7 +168,7 @@ describe('device store', () => {
 		store.applyState(stateDto({ drawer_level_pct: 51 }))
 
 		expect(store.drawerTrend.map((s) => s.pct)).toEqual([40, 45, 51])
-		expect(store.drawerTrend[0].litter).toBe(70)
+		expect(store.drawerTrend[0].litter).toBe(90)
 	})
 
 	it('ignores malformed state pushes', () => {
@@ -143,7 +176,7 @@ describe('device store', () => {
 		store.applyState(stateDto())
 		store.applyState(null)
 		store.applyState('nope')
-		expect(store.state.name).toBe('Alfred')
+		expect(store.state.name).toBe('Poop Roller')
 	})
 
 	it('posts an action, hints the status optimistically, then refreshes', async () => {
@@ -166,7 +199,7 @@ describe('device store', () => {
 		expect(store.actionPending).toBe(null)
 	})
 
-	it('hints emptying and sleeping too', async () => {
+	it('invents no status for a reset, and has no sleep hint at all', async () => {
 		const store = useDeviceStore()
 		await store.init({}, { live: false })
 		const seen = []
@@ -175,12 +208,16 @@ describe('device store', () => {
 			return { ok: true }
 		})
 
-		await store.postAction('empty')
-		await store.postAction('sleep_on')
+		// A reset clears a fault and may spin the globe; it does not tip the drawer,
+		// so "Emptying" was a state the unit never enters.
+		await store.postAction('reset')
+		expect(seen[0][0]).toBe('ready')
 
-		expect(seen[0][0]).toBe('emptying')
-		expect(seen[1][0]).toBe('sleeping')
-		expect(seen[1][1]).toBe(true)
+		// sleep_on is not an action any more; if something still sent it, nothing
+		// may paint the hero as Sleeping before the 400 lands.
+		await store.postAction('sleep_on')
+		expect(seen[1][0]).toBe('ready')
+		expect(seen[1][1]).toBe(false)
 	})
 
 	it('flips a toggle flag immediately so the button reflects the tap', async () => {
@@ -218,8 +255,43 @@ describe('device store', () => {
 
 		expect(result).toBe(null)
 		expect(store.status).toBe('ready')
-		expect(store.error).toBe('unit is not connected')
+		expect(store.actionError).toEqual({ action: 'clean', message: 'unit is not connected' })
 		expect(store.actionPending).toBe(null)
+	})
+
+	// ── F4: the failure must OUTLIVE the 3-second poll ───────────────────────
+	it('keeps a rejected command visible across later successful polls', async () => {
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+		api.postAction.mockRejectedValue({
+			response: { data: { error: 'wait_time_invalid: must be one of 3,7,15,25,30' } },
+		})
+
+		await store.postAction('set_wait_time', { wait_time: 20 })
+		expect(store.actionError.message).toBe('wait_time_invalid: must be one of 3,7,15,25,30')
+
+		// The poll that used to erase it, three times over.
+		await store.loadState()
+		await store.loadState()
+		await store.loadState()
+
+		expect(store.error).toBe(null)
+		expect(store.actionError.message).toBe('wait_time_invalid: must be one of 3,7,15,25,30')
+		expect(store.actionError.action).toBe('set_wait_time')
+
+		// Only an explicit dismiss clears it.
+		store.clearActionError()
+		expect(store.actionError).toBe(null)
+	})
+
+	it('falls back to a generated sentence only when the server says nothing', async () => {
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+		api.postAction.mockRejectedValue({})
+
+		await store.postAction('panel_lock_on')
+
+		expect(store.actionError.message).toBe('Could not panel lock on')
 	})
 
 	it('opens the health drawer when a command fails with the cloud down', async () => {
@@ -245,7 +317,7 @@ describe('device store', () => {
 		}))
 
 		const first = store.postAction('clean')
-		const second = await store.postAction('empty')
+		const second = await store.postAction('reset')
 		expect(second).toBe(null)
 		expect(api.postAction).toHaveBeenCalledTimes(1)
 
@@ -268,7 +340,7 @@ describe('device store', () => {
 		await store.loadState()
 
 		expect(store.error).toBe('bridge unreachable')
-		expect(store.state.name).toBe('Alfred')
+		expect(store.state.name).toBe('Poop Roller')
 		expect(store.loading).toBe(false)
 	})
 
@@ -288,7 +360,8 @@ describe('device store', () => {
 		}
 	})
 
-	it('uses SSE when EventSource is available and applies pushed frames', async () => {
+	// ── F2: one natural close must NOT abandon SSE ───────────────────────────
+	it('survives the single-shot stream closing after every frame', async () => {
 		const store = useDeviceStore()
 		await store.init({}, { live: false })
 		const listeners = {}
@@ -313,9 +386,21 @@ describe('device store', () => {
 			listeners.state({ data: 'not json' })
 			expect(store.status).toBe('cleaning')
 
-			// An SSE error now drops to polling immediately (SSE can stall
-			// silently, so we don't wait around before guaranteeing refresh).
-			listeners.error()
+			// The endpoint closes after each frame and the browser reconnects, so this
+			// pattern repeats for ever on a perfectly healthy stream. It used to drop
+			// to polling on the first one.
+			for (let i = 0; i < 8; i += 1) {
+				listeners.error()
+				expect(store.transport).toBe('sse')
+				listeners.state({ data: JSON.stringify(stateDto({ status: 'ready' })) })
+				expect(store.sseFailures).toBe(0)
+			}
+			expect(close).not.toHaveBeenCalled()
+
+			// A genuine outage — reconnects that deliver nothing — still falls back.
+			for (let i = 0; i < 5; i += 1) {
+				listeners.error()
+			}
 			expect(store.transport).toBe('poll')
 			expect(close).toHaveBeenCalled()
 		} finally {
@@ -325,8 +410,12 @@ describe('device store', () => {
 	})
 
 	it('round-trips the LR4 settings through the API layer', async () => {
-		api.getSettings.mockResolvedValue({ night_light: false, panel_lock: false, wait_time: 7 })
-		api.setSettings.mockResolvedValue({ night_light: true, panel_lock: false, wait_time: 15 })
+		api.getSettings.mockResolvedValue(settingsBlock())
+		api.setSettings.mockResolvedValue({
+			ok: true,
+			settings: settingsBlock({ night_light: true, wait_time: 15 }),
+			errors: {},
+		})
 
 		const store = useDeviceStore()
 		await store.init({}, { live: false })
@@ -335,10 +424,55 @@ describe('device store', () => {
 		expect(store.settings.wait_time).toBe(7)
 		expect(store.waitTime).toBe(7)
 
-		await store.saveSettings({ night_light: true, wait_time: 15 })
+		const result = await store.saveSettings({ night_light: true, wait_time: 15 })
 		expect(api.setSettings).toHaveBeenCalledWith({ night_light: true, wait_time: 15 }, 1)
+		expect(result.ok).toBe(true)
+		expect(result.rejected).toEqual([])
 		expect(store.settings.night_light).toBe(true)
 		expect(store.waitTime).toBe(15)
+	})
+
+	// ── F7: a write is only "saved" if the unit's own readback agrees ────────
+	it('reports FAILURE when the server contradicts the patch', async () => {
+		api.getSettings.mockResolvedValue(settingsBlock())
+		// The sleep window is read-only, so the server answers with a per-key reason
+		// and an unchanged block. The old code called this a success and printed a
+		// green "written to the unit".
+		api.setSettings.mockResolvedValue({
+			ok: false,
+			settings: settingsBlock(),
+			errors: { sleep: 'sleep_read_only: the LR4 sleep window is set in the Whisker app' },
+		})
+
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+		const result = await store.saveSettings({
+			sleep: { enabled: true, start_time: '22:00', end_time: '06:00' },
+		})
+
+		expect(result.ok).toBe(false)
+		expect(result.rejected).toEqual(['sleep'])
+		expect(result.errors.sleep).toMatch(/sleep_read_only/)
+	})
+
+	it('reports FAILURE when a key silently fails to change, errors or not', async () => {
+		api.getSettings.mockResolvedValue(settingsBlock())
+		// HTTP 200, `ok: true`, no errors — and wait_time simply did not move.
+		api.setSettings.mockResolvedValue({
+			ok: true,
+			settings: settingsBlock({ night_light: true }),
+			errors: {},
+		})
+
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+		const result = await store.saveSettings({ night_light: true, wait_time: 25 })
+
+		expect(result.ok).toBe(false)
+		expect(result.rejected).toEqual(['wait_time'])
+		expect(result.errors.wait_time).toBe('not applied by the unit')
+		// The key that DID land is not reported as a failure.
+		expect(result.rejected).not.toContain('night_light')
 	})
 
 	it('loads cycle history and detail', async () => {
@@ -359,6 +493,16 @@ describe('device store', () => {
 		expect(store.selectedCycle.events).toHaveLength(1)
 		store.clearCycle()
 		expect(store.selectedCycle).toBe(null)
+	})
+
+	it('handles the real cycle log shape', async () => {
+		api.getCycles.mockResolvedValue(cycleRows())
+		const store = useDeviceStore()
+		await store.init({}, { live: false })
+		await store.loadCycles()
+		expect(store.cycles).toHaveLength(8)
+		// Every real row is an automatically-detected one; nothing was operator-run.
+		expect(store.cycles.every((c) => c.trigger === 'auto')).toBe(true)
 	})
 
 	it('re-binds the bridge on a connect test and refreshes', async () => {

@@ -75,6 +75,7 @@
 import {
 	drawerLabel,
 	litterLabel,
+	numberOrNull,
 	statusKey,
 	statusLabel,
 	statusTone,
@@ -115,7 +116,7 @@ export default {
 		},
 		fallbackName: {
 			type: String,
-			default: 'Alfred',
+			default: 'Litter-Robot 4',
 		},
 	},
 
@@ -155,17 +156,5 @@ export default {
 	},
 
 	methods: { drawerLabel, litterLabel },
-}
-
-/**
- * @param {unknown} value
- * @returns {number|null}
- */
-function numberOrNull(value) {
-	if (value === null || value === undefined || value === '') {
-		return null
-	}
-	const n = Number(value)
-	return Number.isFinite(n) ? n : null
 }
 </script>

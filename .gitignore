@@ -20,3 +20,8 @@ wifi-helper/node_modules/
 .vscode/
 coverage/
 dist/
+
+# Python bytecode (the bridge is Python; these were committed by mistake)
+__pycache__/
+*.py[cod]
+.pytest_cache/

@@ -60,6 +60,7 @@
 import { NcButton, NcNoteCard } from '@nextcloud/vue'
 
 import { isCloudDown, isStale } from '../utils/errorDecoder.js'
+import { durationLabel } from '../utils/format.js'
 
 /**
  * Fallback when PHP has not supplied `connection_health.recovery`. Whisker is a
@@ -126,7 +127,9 @@ export default {
 			if (!bridge.version) {
 				return this.health.bridge_ok ? 'reachable' : 'unreachable'
 			}
-			return `v${bridge.version} · up ${bridge.uptime_s ?? '—'}s${bridge.mock ? ' · mock' : ''}`
+			const up = Number(bridge.uptime_s)
+			const uptime = Number.isFinite(up) ? durationLabel(up) : '—'
+			return `v${bridge.version} · up ${uptime}${bridge.mock ? ' · mock' : ''}`
 		},
 		lastCommandLabel() {
 			const last = this.health.last_command

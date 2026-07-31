@@ -13,6 +13,14 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Periodically sample bridge state, roll up cycles, append status events, notify.
+ *
+ * The interval below is a floor, not a cadence: a TimedJob only runs when
+ * Nextcloud's cron reaches it, and cron fires every 5 minutes by default. Observed
+ * gaps between stored samples on this instance are therefore 300-900 s, which is
+ * why CycleService treats a `cycle_count` delta — not a sighting of the transient
+ * `cleaning` status — as the evidence that a cycle ran, and refuses to report a
+ * poll gap as a cycle duration. Asking for 30 s here does not buy 30 s sampling;
+ * only a shorter system cron does.
  */
 class TelemetrySampleJob extends TimedJob
 {

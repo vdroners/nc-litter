@@ -63,6 +63,38 @@ describe('condition decoder view logic', () => {
 		expect(hasFault({ status: 'cleaning', error: 0 })).toBe(false)
 	})
 
+	// ── F17: the heading used to read "Something needs a look (1)" ──────────
+	it('resolves the LR4 status code rather than the numeric error register', () => {
+		// The DTO carries `status_code` now. A bare "1" is an internal register value
+		// the operator cannot look up anywhere, so it is never printed.
+		const decoded = decoratedError({
+			status: 'fault',
+			status_code: 'DFS',
+			error: 1,
+			decoded_error: { code: 1, kind: 'error', title: 'Something needs a look', detail: 'x', action: '' },
+		})
+		expect(decoded.code).toBe('DFS')
+	})
+
+	it('prefers the decoded status_code when the server supplies one', () => {
+		const decoded = decoratedError({
+			status: 'fault',
+			status_code: 'RDY',
+			error: 1,
+			decoded_error: { code: 1, status_code: 'BR', kind: 'error', title: 'Bonnet removed', detail: 'x', action: '' },
+		})
+		expect(decoded.code).toBe('BR')
+	})
+
+	it('emits an empty code rather than a meaningless number', () => {
+		const decoded = decoratedError({
+			status: 'fault',
+			error: 7,
+			decoded_error: { code: 7, kind: 'error', title: 'Something needs a look', detail: 'x', action: '' },
+		})
+		expect(decoded.code).toBe('')
+	})
+
 	it('is honest when the catalog has no entry for the condition', () => {
 		const decoded = decoratedError({ status: 'fault', error: 1, decoded_error: null })
 		expect(decoded.show).toBe(true)

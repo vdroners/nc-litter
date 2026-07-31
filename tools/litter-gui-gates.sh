@@ -34,11 +34,22 @@ check_file_contains G31d src/components/StatusHero.vue 'data-field="litter-gauge
 check_file_contains G31e src/components/StatusHero.vue 'data-field="cat-weight"'
 check_file_contains G31f src/components/RingGauge.vue 'nc-litter-ring__pct'
 
-# ── Control pad: LR4 command surface + the confirmed drawer commands ─────
+# ── Control pad: the LR4 command surface, and only that ─────────────────
+# `reset` replaced `empty`/`reset_drawer` (one command under three names, none of
+# which emptied the drawer), and sleep is gone entirely: pylitterbot raises
+# NotImplementedError for LR4 sleep, so a sleep button could only ever fail.
 check_file_contains G32 src/components/ControlPad.vue 'empty-confirm'
 check_file_contains G32b src/components/ControlPad.vue 'data-action="set_wait_time"'
-for action in clean empty reset_drawer sleep_on sleep_off night_light_on night_light_off panel_lock_on panel_lock_off; do
+for action in clean reset night_light_on night_light_off panel_lock_on panel_lock_off; do
   check_file_contains "G32-${action}" src/components/ControlPad.vue "name: '${action}'"
+done
+for gone in sleep_on sleep_off; do
+  if grep -Fq -- "name: '${gone}'" "$ROOT/src/components/ControlPad.vue"; then
+    echo "FAIL G32z ControlPad offers ${gone}, which the LR4 cannot honour"
+    fail=1
+  else
+    echo "PASS G32z ${gone} not offered"
+  fi
 done
 
 # ── Condition decoder + cycle theater / timeline ────────────────────────

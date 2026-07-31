@@ -4,30 +4,22 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\Service;
 
-use OCA\NcLitter\AppInfo\Application;
-use OCP\IConfig;
+use OCA\NcLitter\Exception\SecretDecryptException;
 use OCP\Security\ICrypto;
 use Psr\Log\LoggerInterface;
 
 /**
- * Encrypts device / admin secrets at rest (`enc:v1:` + ICrypto).
+ * Encrypts device secrets at rest (`enc:v1:` + ICrypto).
  *
  * The Whisker account password for a bound unit lives in
- * `nc_litter_devices.creds_enc` (written by DeviceService::upsertDevice), not in
- * appconfig. SECRET_KEYS lists the appconfig keys that hold a secret and must
- * therefore never be echoed back to a client.
+ * `nc_litter_devices.creds_enc` (written by DeviceService::upsertDevice). It is
+ * the only secret this app stores, and it is never held in appconfig.
  */
 class AdminSecretCrypto
 {
 	public const PREFIX = 'enc:v1:';
 
-	/** @var list<string> */
-	public const SECRET_KEYS = [
-		'whisker_password',
-	];
-
 	public function __construct(
-		private IConfig $config,
 		private ICrypto $crypto,
 		private LoggerInterface $logger,
 	) {
@@ -41,6 +33,15 @@ class AdminSecretCrypto
 		return self::PREFIX . $this->crypto->encrypt($plain);
 	}
 
+	/**
+	 * A value without the `enc:v1:` prefix is legacy plaintext and passes through
+	 * unchanged. A prefixed value that will not decrypt is a hard failure, not a
+	 * string: returning the ciphertext (as this used to) meant the app sent
+	 * `enc:v1:...` to Whisker as the password and blamed the operator's
+	 * credentials for what was really a key-rotation problem.
+	 *
+	 * @throws SecretDecryptException when a stored `enc:v1:` value cannot be read
+	 */
 	public function decrypt(string $stored): string
 	{
 		if ($stored === '' || !str_starts_with($stored, self::PREFIX)) {
@@ -51,30 +52,14 @@ class AdminSecretCrypto
 			return $this->crypto->decrypt($payload);
 		} catch (\Throwable $e) {
 			$this->logger->warning(
-				'AdminSecretCrypto: failed to decrypt stored secret (returning raw). Error: {err}',
+				'AdminSecretCrypto: stored secret could not be decrypted (instance secret rotated?). Error: {err}',
 				['err' => $e->getMessage()],
 			);
-			return $stored;
+			throw new SecretDecryptException(
+				'Stored credentials could not be decrypted — re-enter them.',
+				0,
+				$e,
+			);
 		}
-	}
-
-	public function get(string $key, string $default = ''): string
-	{
-		$raw = (string) $this->config->getAppValue(Application::APP_ID, $key, $default);
-		return $this->decrypt($raw);
-	}
-
-	public function set(string $key, string $plain): void
-	{
-		if ($plain === '') {
-			$this->config->deleteAppValue(Application::APP_ID, $key);
-			return;
-		}
-		$this->config->setAppValue(Application::APP_ID, $key, $this->encrypt($plain));
-	}
-
-	public function isEncrypted(string $stored): bool
-	{
-		return str_starts_with($stored, self::PREFIX);
 	}
 }

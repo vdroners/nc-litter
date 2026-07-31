@@ -18,7 +18,12 @@
 						<span v-if="isNew(a)" class="nc-litter-achv__new">New!</span>
 					</span>
 					<span class="nc-litter-achv__blurb">{{ a.blurb }}</span>
-					<span v-if="!a.unlocked" class="nc-litter-achv__progress" :aria-label="progressLabel(a)">
+					<!-- A badge scored from readings the unit never sent says so, rather
+					     than showing a progress bar frozen at 0 for ever. -->
+					<span v-if="!a.unlocked && !a.measurable" class="nc-litter-achv__blurb" data-field="unmeasurable">
+						No readings recorded for this yet.
+					</span>
+					<span v-else-if="!a.unlocked" class="nc-litter-achv__progress" :aria-label="progressLabel(a)">
 						<span class="nc-litter-achv__bar" :style="{ width: Math.round(a.progress * 100) + '%' }" />
 						<span class="nc-litter-achv__count">{{ progressLabel(a) }}</span>
 					</span>

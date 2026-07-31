@@ -1,9 +1,18 @@
 {
+  "_comment": [
+    "Maintenance advisories, read by MaintenanceHintService.",
+    "Every comparator present on a rule must hold (they are ANDed), which is how",
+    "the warn tiers carry an upper bound so a full drawer fires `danger` only",
+    "instead of `warn` and `danger` together.",
+    "knowledge/maintenance_thresholds.yaml is a human-readable mirror of this file;",
+    "keep both in sync."
+  ],
   "thresholds": [
     {
       "id": "drawer_level_warn",
       "metric_state": "drawer_level_pct",
       "gte": 90,
+      "lt": 98,
       "severity": "warn",
       "title": "Waste drawer filling up",
       "detail": "The drawer is nearly full. A tidy household empties it before it insists.",
@@ -15,13 +24,14 @@
       "gte": 98,
       "severity": "danger",
       "title": "Waste drawer full",
-      "detail": "The drawer has reached capacity. Alfred will decline to cycle until it is emptied.",
+      "detail": "The drawer has reached capacity. The box will decline to cycle until it is emptied.",
       "action": "Empty the waste drawer now, fit a new liner, and slide it home until it clicks."
     },
     {
       "id": "litter_level_warn",
       "metric_state": "litter_level_pct",
       "lte": 20,
+      "gt": 8,
       "severity": "warn",
       "title": "Litter running low",
       "detail": "The globe is getting light on litter. A modest top-up keeps every cycle clean.",
@@ -39,11 +49,12 @@
     {
       "id": "cycles_since_empty_info",
       "metric_state": "cycles_since_empty",
-      "gte": 40,
+      "gte": 10,
       "severity": "info",
       "title": "Several cycles since the last empty",
-      "detail": "Alfred has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.",
-      "action": "Consider emptying the waste drawer and starting the count fresh."
+      "detail": "The box has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.",
+      "action": "Consider emptying the waste drawer and starting the count fresh.",
+      "_note": "Fed by the device's own cycles_after_drawer_full counter, which resets when the drawer is reset. An LR4 reports cycle_capacity around 14, so the old threshold of 40 could never fire once this metric stopped being a local row count."
     }
   ]
 }

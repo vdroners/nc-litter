@@ -68,6 +68,12 @@ class MaintenanceHintService
 	 * `equals`, string-comparable). A missing metric never fires a hint, so an
 	 * unsupported sensor stays silent instead of shouting.
 	 *
+	 * EVERY comparator on the rule must hold — they are ANDed, not first-match.
+	 * That is what lets a warn tier carry an upper bound (`gte: 90, lt: 98`) so a
+	 * full drawer reports `danger` on its own instead of stacking `warn` and
+	 * `danger` in the same panel. A rule with a single comparator behaves exactly
+	 * as it did before.
+	 *
 	 * @param array<string, mixed> $rule
 	 * @param array<string, mixed> $metrics
 	 */
@@ -88,18 +94,24 @@ class MaintenanceHintService
 			return false;
 		}
 		$n = (float) $value;
-		if (array_key_exists('lte', $rule)) {
-			return $n <= (float) $rule['lte'];
+		$comparators = [
+			'lte' => static fn (float $a, float $b): bool => $a <= $b,
+			'lt' => static fn (float $a, float $b): bool => $a < $b,
+			'gte' => static fn (float $a, float $b): bool => $a >= $b,
+			'gt' => static fn (float $a, float $b): bool => $a > $b,
+		];
+		$tested = false;
+		foreach ($comparators as $name => $test) {
+			if (!array_key_exists($name, $rule)) {
+				continue;
+			}
+			$tested = true;
+			if (!$test($n, (float) $rule[$name])) {
+				return false;
+			}
 		}
-		if (array_key_exists('lt', $rule)) {
-			return $n < (float) $rule['lt'];
-		}
-		if (array_key_exists('gte', $rule)) {
-			return $n >= (float) $rule['gte'];
-		}
-		if (array_key_exists('gt', $rule)) {
-			return $n > (float) $rule['gt'];
-		}
-		return false;
+		// A rule with no comparator at all asserts nothing; stay quiet rather than
+		// firing on the mere presence of the metric.
+		return $tested;
 	}
 }

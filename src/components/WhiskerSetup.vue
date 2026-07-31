@@ -68,7 +68,7 @@
 			</ul>
 			<label>
 				Display name in NC Litter
-				<input v-model="form.name" type="text" placeholder="Alfred">
+				<input v-model="form.name" type="text" placeholder="Litter-Robot 4">
 			</label>
 			<div class="nc-litter-actions">
 				<NcButton :disabled="!!busy" @click="step = 0">Back</NcButton>
@@ -130,8 +130,8 @@ export default {
 		},
 	},
 
-	emits: ['busy', 'report', 'applied', 'test'],
-
+	// No `emits:` option — that is Vue 3 and is inert under Vue 2.7. The events
+	// this component raises are 'busy', 'report', 'applied' and 'test'.
 	data() {
 		const device = this.config.device || {}
 		return {
@@ -144,7 +144,7 @@ export default {
 			form: {
 				email: device.account_email || '',
 				password: '',
-				name: device.name || 'Alfred',
+				name: device.name || 'Litter-Robot 4',
 			},
 		}
 	},

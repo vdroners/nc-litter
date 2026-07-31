@@ -21,7 +21,7 @@
 				<text class="nc-litter-donut__label" x="22" y="22" dominant-baseline="central" text-anchor="middle">{{ faultFreeRate }}%</text>
 			</svg>
 			<div>
-				<p class="nc-litter-donut-row__title">Fault-free cycles</p>
+				<p class="nc-litter-donut-row__title">Cleanly completed cycles</p>
 				<p class="nc-litter-muted">{{ faultFreeCaption }}</p>
 			</div>
 		</div>
@@ -38,12 +38,28 @@
 
 <script>
 import { catWeightLabel, durationLabel } from '../utils/format.js'
+import { drawerEmpties } from '../utils/achievements.js'
 
 /** Donut geometry: r=18 → circumference 2πr. */
 const DONUT_CIRC = 2 * Math.PI * 18
 
-/** A drawer at or below this percent counts as freshly emptied. */
-const DRAWER_EMPTY_PCT = 5
+/**
+ * A recorded cycle counts as cleanly completed only when the unit reported no
+ * error AND we actually saw it finish. `interrupted` means the poller never
+ * observed the closing boundary, which is not the same thing as success — the
+ * History list has always badged those rows amber, and this panel used to call
+ * the very same rows fault-free.
+ *
+ * @param {object} cycle recorded cycle row
+ * @returns {boolean}
+ */
+function completedCleanly(cycle) {
+	return Number(cycle.error_code || 0) === 0 && String(cycle.result || '') === 'complete'
+}
+
+/** Longest whisker id we will print in full before eliding the middle. */
+const ID_HEAD = 8
+const ID_TAIL = 6
 
 /**
  * Presentational lifetime rollup shared by the Dashboard (health rail) and the
@@ -81,11 +97,12 @@ export default {
 			return Array.isArray(this.cycles) ? this.cycles : []
 		},
 
-		/** @returns {number} recorded cycles whose drawer ended empty */
+		/**
+		 * @returns {{count: number, tidy: number, observations: number}} empties
+		 *   inferred from drops in the observed drawer level
+		 */
 		empties() {
-			return this.rows.filter((c) => c.drawer_after !== null
-				&& c.drawer_after !== undefined
-				&& Number(c.drawer_after) <= DRAWER_EMPTY_PCT).length
+			return drawerEmpties(this.rows)
 		},
 
 		/** @returns {number|null} mean recorded cat weight, in pounds */
@@ -106,10 +123,7 @@ export default {
 		 * @returns {number|null}
 		 */
 		daysSinceEmpty() {
-			const emptied = this.rows.find((c) => c.drawer_after !== null
-				&& c.drawer_after !== undefined
-				&& Number(c.drawer_after) <= DRAWER_EMPTY_PCT)
-			const ts = emptied ? Number(emptied.started_at) : 0
+			const ts = this.empties.lastTs
 			if (!ts) {
 				return null
 			}
@@ -129,7 +143,12 @@ export default {
 			}
 			if (this.rows.length > 0) {
 				out.push({ label: 'Recorded cycles', value: this.rows.length.toLocaleString() })
-				out.push({ label: 'Drawer empties', value: this.empties.toLocaleString() })
+			}
+			// Only claim an empties count when the log actually carries drawer levels
+			// to compare. "Drawer empties: 0" on a unit whose rows all have
+			// `drawer_after: null` is a measurement failure dressed up as a fact.
+			if (this.empties.observations >= 2) {
+				out.push({ label: 'Drawer empties', value: this.empties.count.toLocaleString() })
 			}
 			if (this.avgCatWeight !== null) {
 				out.push({ label: 'Avg cat weight', value: catWeightLabel(this.avgCatWeight) })
@@ -147,19 +166,31 @@ export default {
 			return out
 		},
 
-		/** @returns {number|null} whole-percent share of recorded cycles with no fault */
+		/** @returns {number} recorded cycles that ran clean start to finish */
+		cleanCount() {
+			return this.rows.filter(completedCleanly).length
+		},
+		/** @returns {number|null} whole-percent share of cleanly completed cycles */
 		faultFreeRate() {
 			if (this.rows.length === 0) {
 				return null
 			}
-			const clean = this.rows.filter((c) => Number(c.error_code || 0) === 0
-				&& String(c.result || '') !== 'fault').length
-			return Math.round((clean / this.rows.length) * 100)
+			return Math.round((this.cleanCount / this.rows.length) * 100)
 		},
 		faultFreeCaption() {
-			const clean = this.rows.filter((c) => Number(c.error_code || 0) === 0
-				&& String(c.result || '') !== 'fault').length
-			return `${clean.toLocaleString()} of ${this.rows.length.toLocaleString()} recorded cycles finished without a fault`
+			const total = this.rows.length
+			const faults = this.rows.filter((c) => Number(c.error_code || 0) !== 0
+				|| String(c.result || '') === 'fault').length
+			const unfinished = total - this.cleanCount - faults
+			const parts = []
+			if (faults > 0) {
+				parts.push(`${faults.toLocaleString()} faulted`)
+			}
+			if (unfinished > 0) {
+				parts.push(`${unfinished.toLocaleString()} never seen to finish`)
+			}
+			const tail = parts.length ? ` (${parts.join(', ')})` : ''
+			return `${this.cleanCount.toLocaleString()} of ${total.toLocaleString()} recorded cycles ran clean from start to finish${tail}`
 		},
 		donutCirc() {
 			return DONUT_CIRC.toFixed(2)
@@ -179,13 +210,23 @@ export default {
 				out.push({ label: 'Model', value: String(dto.model) })
 			}
 			if (dto.whisker_device_id) {
-				out.push({ label: 'Whisker id', value: String(dto.whisker_device_id) })
+				out.push({ label: 'Whisker id', value: shortId(String(dto.whisker_device_id)) })
 			}
-			if (dto.wifi_ssid) {
-				out.push({ label: 'Wi-Fi', value: String(dto.wifi_ssid) })
-			}
+			// No Wi-Fi row: `wifi_ssid` was removed from the DTO — an LR4 has no such
+			// property, so it only ever printed null.
 			return out
 		},
 	},
+}
+
+/**
+ * The whisker id is a 64-character hash; printed in full it dominates the identity
+ * card. Keep enough of both ends to match against a support ticket.
+ *
+ * @param {string} id
+ * @returns {string}
+ */
+function shortId(id) {
+	return id.length > ID_HEAD + ID_TAIL + 1 ? `${id.slice(0, ID_HEAD)}…${id.slice(-ID_TAIL)}` : id
 }
 </script>

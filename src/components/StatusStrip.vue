@@ -17,9 +17,12 @@
 		</span>
 		<span v-if="sleeping" class="nc-litter-chip" data-field="sleeping">🌙 Sleeping</span>
 		<span v-if="panelLock" class="nc-litter-chip" data-field="panel-lock">🔒 Locked</span>
-		<span :class="['nc-litter-chip', rssiClass(rssi)]" data-field="rssi">{{ rssiLabel(rssi) }}</span>
+		<!-- No Wi-Fi chip: an LR4 exposes neither rssi nor an SSID, so this used to
+		     render a permanent "Wi-Fi —" with no v-if to hide it. The DTO's
+		     `wifi_mode` is not a substitute — it reads "OFF" on a perfectly healthy
+		     unit. Freshness of the cloud reading is the honest signal, below. -->
 		<span :class="['nc-litter-chip', stale ? 'warn' : '']" data-field="last-seen">
-			Last seen {{ lastSeenLabel(ageS, hasSample) }}
+			Reading {{ lastSeenLabel(ageS, hasSample) }}
 		</span>
 		<button
 			:class="['nc-litter-chip', 'nc-litter-chip--button', connectionClass]"
@@ -38,8 +41,6 @@ import {
 	lastSeenLabel,
 	litterLabel,
 	litterLevelClass,
-	rssiClass,
-	rssiLabel,
 	statusLabel,
 	statusTone,
 } from '../utils/format.js'
@@ -57,6 +58,10 @@ export default {
 			type: Object,
 			default: null,
 		},
+		/**
+		 * Age of `updated_at` — when the bridge last got a reading. Deliberately NOT
+		 * the DTO's `last_seen`, which was observed 3 days stale on a healthy unit.
+		 */
 		ageS: {
 			type: Number,
 			default: 0,
@@ -73,7 +78,7 @@ export default {
 
 	computed: {
 		name() {
-			return (this.state && this.state.name) || 'Alfred'
+			return (this.state && this.state.name) || 'Litter-Robot 4'
 		},
 		statusText() {
 			return this.state ? statusLabel(this.state) : 'Connecting…'
@@ -92,9 +97,6 @@ export default {
 		},
 		panelLock() {
 			return Boolean(this.state && this.state.panel_lock)
-		},
-		rssi() {
-			return this.state ? this.state.rssi : null
 		},
 		hasSample() {
 			return Boolean(this.state && this.state.updated_at)
@@ -122,8 +124,6 @@ export default {
 		lastSeenLabel,
 		litterLabel,
 		litterLevelClass,
-		rssiClass,
-		rssiLabel,
 	},
 }
 </script>

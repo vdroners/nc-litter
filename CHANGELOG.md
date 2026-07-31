@@ -5,410 +5,206 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.9.1] - 2026-07-26
+This app began as a clone of the `nc_roomba` shell (same controllers → services →
+bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
+device layer replaced. Its history starts here; the vacuum app's changelog was
+inherited by the clone and is not this app's history, so it has been removed.
 
-### Fixed
+## [0.2.0] - 2026-07-30
 
-- **`Not ready 15` looked like an error after docking.** The robot briefly
-  reports `notReady 15` (and similar) while it settles onto the dock and starts
-  charging; the code wasn't in the catalog, so the app showed a scary "No
-  catalog entry" message. Added entries for 15 / 16 / 31 (charging / just-docked
-  / docked-and-charging) with reassuring copy, and reworded the generic
-  unknown-code fallback to explain it's a benign transient that clears itself.
+An adversarial audit of the whole app — backend, bridge and GUI — against the
+real Litter-Robot 4 and the *installed* `pylitterbot`. It found three blockers
+and nine majors, most of them cases where the app reported something confidently
+untrue. All are fixed below.
 
-### Added
+### Fixed — the app was lying to operators
 
-- **Twelve more achievements** (14 → 26): higher mission/run-hour/area tiers
-  (Half Century, Old Faithful, Household Legend, The Full Work Week, Master of
-  the House, Square Shooter, Ballpark Figure) plus playful wear-counter
-  milestones (Scrub Life, Cliff Daredevil, Featherweight Feet, The Perfectionist,
-  Clockwork Butler) — all derived from real robot counters.
+- **A 1% level was reported as 100%.** `_pct()` treated any value in `0..1` as a
+  fraction and multiplied by 100. Both LR4 level fields are already percentages
+  (`DFILevelPercent`, and `litterLevelPercentage * 100`), so a nearly-empty waste
+  drawer read as **full** — firing a drawer-full notification — and, in the other
+  direction, critically-low litter read as **100% remaining**, suppressing the
+  low-litter warning at exactly the moment it mattered.
+- **Every fault decoded to "Something needs a look".** The DTO carried no
+  `status_code`, and the normalizer collapsed BR/CSF/SCF/PD/OTF/DHF/DPF/HPF/SPF
+  to a bare `fault`, discarding the code it had already computed. Eleven of the
+  catalog's fourteen error entries were unreachable. The raw code is now carried
+  through and resolved, so a removed bonnet says so.
+- **Sleep on/off could never work, and failed silently.** `set_sleep_mode` is
+  `raise NotImplementedError()` for the LR4 and `LitterRobot4Command` has no
+  sleep verb — yet `capabilities.sleep` was hardcoded `true`, so the UI offered
+  the control. Because `str(NotImplementedError())` is the empty string, pressing
+  it produced a failure with **no reason given**. The actions are removed, the
+  capability reports `false`, and the sleep window is presented read-only
+  (it is changed in the Whisker app).
+- **Saving settings always claimed success.** `set_settings` discarded every
+  per-key result and the HTTP layer hardcoded `ok: true`, so the app showed
+  "Saved" for writes that had failed. It now returns `{ok, settings, errors}`
+  with 200/207/502, the PHP layer forwards it, and the GUI diffs the readback
+  against the patch and reports per-key failure.
+- **"Empty globe" did not empty anything.** `empty` and `reset_drawer` were two
+  buttons, two confirm dialogs and two audit names for **one** command:
+  `reset()`, a short reset press that clears errors and may turn the globe once.
+  The confirm text claimed it "tips everything into the waste drawer" and
+  "clears the cycles-since-empty count"; neither is possible. Collapsed to one
+  honest **Reset / clear error** control with accurate copy.
+- **`cycles_since_empty` was the number of local database rows** and grew
+  forever, so its maintenance hint would latch permanently while the drawer sat
+  at 7%. The device reports this itself as `cycles_after_drawer_full`, which was
+  in `pylitterbot` all along and read by nothing. Now surfaced and used.
+- **The app manufactured cycles it never observed.** The reaper closed an
+  over-age cycle and reopened one on the same tick, producing an unbounded chain
+  of fake `interrupted` rows (seven found on the live install, chained
+  end-to-start). Cycle detection now keys off `cycle_count` deltas, will not
+  reopen on a reap tick, and **stores no duration when neither boundary was
+  seen** — the old rows reported the telemetry poll gap (900s) as a cycle
+  duration and notified it as fact, for cycles that actually take ~90s. A repair
+  step purges the fabricated rows.
+- **A dead Whisker cloud looked perfectly healthy.** `updated_at` was re-stamped
+  on every *read*, so the 90-second staleness rule could never fire, and a failing
+  refresh left `connected: true` while serving hours-old numbers. Added
+  `last_poll_ok_at` / `poll_error`, and `connected` now goes false after three
+  consecutive failed polls. (`last_seen` is exposed but deliberately unused for
+  freshness — it reads 3 days stale on a healthy unit.)
+- **Two panels contradicted each other on the same screen.** The Dashboard showed
+  a 100% "Fault-free cycles — 8 of 8" donut while History badged 7 of those same
+  8 rows as INTERRUPTED. `interrupted` now counts as not-cleanly-completed, and
+  the metric is titled for what it measures.
+- **History presented telemetry poll gaps as cycle durations** ("· 30m", "· 24m").
+  Unobserved durations render as "not observed".
+- **A failed command left no trace.** The 3-second poll cleared the error banner,
+  and a later successful tap wiped the previous failure. Action failures are now
+  sticky until dismissed, and carry the server's real reason.
 
-## [0.9.0] - 2026-07-26
+### Fixed — GUI
 
-### Added
+- **Labels were hard-clipped; "Litter" rendered as nothing at all.** Nextcloud's
+  `core/css/server.css` styles a bare `dt` as `display:inline-block; width:130px;
+  white-space:nowrap; text-align:end`. That fixed 130px width overflowed ~120px
+  tiles, and `overflow: hidden` cut the result: "Waste drawer" → "Waste",
+  "Litter" → invisible, plus nine stats labels shaved. Fifteen clipped elements
+  measured at 1600px; now zero. Fixed with one app-wide `dt` reset rather than
+  per-component patches.
+- **SSE never worked in a browser and armed a state-wipe bug.** The `/stream`
+  route's `Content-Type` stayed `text/html` (the bridge proxy echoed to output,
+  escaping the `ob_start()` wrapper and sending the body before the headers), so
+  `EventSource` refused it and logged a dozen "headers already sent" warnings per
+  request; the enriched frame also arrived *last*, ~25s after a **raw** frame of a
+  different shape. Since `applyState` did a full replace, fixing the MIME type
+  alone would have made the UI flicker between two shapes every 15s. The route is
+  now a single enriched frame plus a `retry` hint with correct headers, the store
+  merges instead of replacing, and one natural close no longer abandons SSE
+  forever (`SSE_MAX_FAILURES` was 1).
+- **All Wi-Fi UI was dead** — a permanent "Wi-Fi —" chip, a hero tile with four
+  never-lit signal bars, and three helpers with two dedicated tests. An LR4 has
+  no RSSI and no SSID. Removed; the freed tile now shows the real wait time.
+- **Tabby amber failed contrast on light theme**, which is this instance's active
+  theme — including both primary ring gauges at 2.05:1 (needs 3:1) and the "New!"
+  pill at 2.24:1 (needs 4.5:1). Added light-theme-only ink tokens; the two
+  gauges now measure 5.16:1 and the pill 7.77:1. The dark path was already
+  passing and is unchanged.
+- **A stylesheet was injected into every Nextcloud page.** `css/nc-litter-theme.css`
+  was a byte-for-byte copy of the NC-GCS theme — declaring `--nc-gcs-*` tokens
+  and `.nc-gcs-app-shell` component classes globally, re-declaring `:root` after
+  nc_gcs's own copy — loaded from `boot()` on Files, Talk, Settings and
+  everything else, for an app that renders on one route. nc_litter read none of
+  it. Deleted.
+- Nine odometer achievements unlocked on install because progress was scored
+  against the unit's 1,684-cycle lifetime counter — including "First Flush — the
+  very first clean cycle is in the books". Three drawer achievements were
+  unreachable because they keyed off a field that is null in practice. Both fixed.
+- Connection-health drawer sat behind the Nextcloud header; `prefers-reduced-motion`
+  killed animations but not transitions; timeline band labels clipped; several
+  dead selectors and store members removed.
 
-- **Live cleaning footprint / floor map.** The bridge now accumulates a
-  mission-scoped pose trail + a 25 cm covered-cell grid (reset on each new
-  mission) and emits `pose_trail` / `covered_cells` in the DTO. The Location map
-  and Dashboard mission stage render a **swept-area footprint** (translucent
-  cells, brighter where the robot dwelled/re-passed — often walls/edges), the
-  crisp path, and the robot marker — built entirely from the robot's live pose.
-- **Derived coverage + duration.** The 960 reports `sqft`/`mssn_m` as 0 live, so
-  the bridge derives `mission_m_est` (from `started_at`) and `sqft_est` (unique
-  swept-cell area); the UI shows them labelled "est." when the robot's own value
-  is absent.
+### Fixed — security & robustness
 
-### Fixed
-
-- **Map heading was wrong.** The marker used `rotate(theta)` while the Y axis is
-  flipped; corrected to `rotate(-theta - 90)` so the cone points along travel.
-- **Map position barely moved.** Replaced the fixed `±500 cm` viewBox with one
-  that **auto-fits** the dock + trail + current pose, so real motion fills the
-  frame.
-- **Mission-stage metric labels/values clipped.** `dt` letter-spacing reduced +
-  wrap; `dd` uses a fluid `clamp()` font size and the box clips internally, so
-  long values (now with "est.") scale down instead of overflowing.
-
-### Changed
-
-- **Denser dashboard layout.** On wide screens the dashboard fills the width
-  (container up to 1400px) with a 12-column grid — hero + controls on top, the
-  large mission stage beside a timeline/lifetime rail — instead of a single
-  narrow column with big empty margins. Single column on phones.
-- Location copy is explicit that the 960 doesn't publish a full carpet/room map
-  over the local API (that would need the iRobot cloud) — the footprint is the
-  honest, robot-reported coverage, not a fabricated map.
-
-## [0.8.0] - 2026-07-26
-
-### Added
-
-- **OpenClaw "Alfred" integration (optional, off by default).** Two-way:
-  - Alfred (the household/ops agent) can drive the robot from Nextcloud Talk —
-    `@alfred litter status | clean | spot | pause | resume | dock | find | stop`
-    — via a new OpenClaw `litter` skill (SKILL.md + `litter-dispatch-exec.sh`,
-    `litter-talk-fast-path.sh`, `litter-monitor.sh`, `load-litter-env.sh`).
-    Commands route through the app's PHP API as the `alfred` operator, so the
-    operator ACL and command-audit log govern them (no bridge bypass).
-  - A `litter-monitor` posts `[litter]` mission/bin alerts to the family Talk
-    room and appends them to a rolling tail.
-  - **In-app surface:** a Dashboard **"Ask Alfred"** card (`AlfredPanel.vue`)
-    that links to the Talk room, shows example commands, and mirrors the recent
-    alerts. Gated behind a new **Admin → Alfred assistant** toggle
-    (`alfred_enabled` / `alfred_talk_room` appconfig); a read-only
-    `/api/alfred/alerts` endpoint feeds the mirror.
-  - Everything is off unless both `LITTER_ENABLED=1` (OpenClaw) and
-    `alfred_enabled` (app) are set. The robot and its "Alfred" name now share
-    one assistant identity.
-
-## [0.7.3] - 2026-07-26
-
-### Fixed
-
-- **Cleaning-preference changes snapped back to Auto and didn't stick.** Two
-  causes: (1) `SettingsController::setPreferences` returned the robot's confirmed
-  block under a `body` wrapper while the client (and `getPreferences`) expected
-  it under `preferences`, so the save response deserialized to defaults; and
-  (2) the Settings view's watcher re-applied `store.preferences` on every live
-  poll, overwriting an unsaved selection before the operator could Save. The
-  controller now returns the same `preferences` shape as `getPreferences`, and
-  the watcher only adopts robot values when there are no unsaved edits. (The
-  write always did reach the robot — it just takes a second to echo back.)
-
-## [0.7.2] - 2026-07-26
-
-### Fixed
-
-- **Cleaning preferences didn't reflect the robot's current settings** and
-  toggling a radio showed no selection. The carpet-boost / cleaning-passes radio
-  groups were bound with `:checked`, but `NcCheckboxRadioSwitch` (v8) derives a
-  radio's checked state from `model-value === value` when a `value` is set,
-  ignoring `checked`. Switched the two radio groups to
-  `:model-value` / `@update:model-value`; the plain edge-clean / always-finish
-  switches (no `value`) correctly keep `:checked`.
-
-## [0.7.1] - 2026-07-26
-
-### Changed
-
-- Visual polish on the 0.7.0 revamp: the battery ring now shows the percentage
-  in its centre (a ⚡ while calibrating); the status pill's dot gently pulses
-  while cleaning; pill/stage state colours fully use the shared tokens; and the
-  dashboard's remaining ad-hoc corner radii were migrated to the radius scale.
-- Added a consistent keyboard **focus-visible** ring to the app's custom
-  interactive surfaces (history rows, achievement tiles, chip buttons).
-
-## [0.7.0] - 2026-07-26
-
-### Added
-
-- **Dashboard data-visualization.** The hero's flat facts are now compact
-  gauges driven by real telemetry: an SVG **battery ring** (level-coloured,
-  charge-aware), **Wi-Fi signal bars** from the RSSI buckets, and a **bin fill
-  glyph**. LifetimeStats gains a **mission success-rate donut**. Pure helpers
-  `signalBars()` / `batteryLevel()` in `format.js`, unit-tested.
-- **Iconified controls.** ControlPad buttons now carry leading glyphs
-  (Clean/Spot/Pause/Resume/Dock/Find/Stop) via `NcIconSvgWrapper` + inline
-  MDI-style paths — no new dependency.
-
-### Changed
-
-- **Design-token layer + elevation.** Added systematic radius, spacing,
-  elevation (`--nc-litter-shadow-sm/md/lg` + a brass `--…-glow`), state-colour
-  and motion tokens; panels and cards now have real depth and a hairline
-  highlight, interactive rows/tiles lift on hover, and the mission stage gets a
-  brass glow while cleaning. Hardcoded pause/dock/fault colours were promoted to
-  tokens so light theme holds up.
-- **Gentle entrance motion** for dashboard panels (staggered rise), all
-  `prefers-reduced-motion` aware.
-
-### Fixed
-
-- Removed a dead teal `:root` accent override in `nc-litter-theme.css` that was
-  always shadowed by the brass accent — the butler palette is now unambiguous.
-
-## [0.6.0] - 2026-07-25
-
-### Added
-
-- **Achievements.** A butler-themed, purely-derived achievement wall (no new DB)
-  computed live from the robot's own counters via `src/utils/achievements.js` —
-  mission, run-hour, area, reliability and streak tiers with progress bars on the
-  ones still locked, plus a "New!" tag for freshly-earned badges. Shown on
-  History with an unlocked/total teaser on the Dashboard. Unit-tested against a
-  veteran unit's counters.
-- **Dashboard "at a glance" hero (`StatusHero.vue`).** A single card up top with
-  a Ready / Cleaning / Charging / Returning / Attention status pill plus battery,
-  bin, Wi-Fi and next-scheduled-clean — answering "is the robot OK and what is it
-  doing" without scanning five widgets.
-- **History lifetime band + inviting empty state.** History now leads with the
-  robot's lifetime totals (missions, run time, area, success rate) so it is
-  informative before any mission is recorded, and the empty state explains what
-  will appear and offers a **Clean now** button instead of a dead end.
+- **`/api/alfred/alerts` had no permission check** — the only such route in the
+  app. Any of the 126 authenticated users on this instance could read the alert
+  tail. Now operator-gated.
+- **A 0-day retention deleted everything, including the sample written a second
+  ago** (`cutoff(0)` returned `time() + 1`). The cutoff is floored an hour in the
+  past, telemetry belonging to retained or open cycles is protected, and
+  retention deletes cycles, events and samples in matching batches instead of
+  capping one at 10,000 and leaving the rest orphaned.
+- **`/api/devices/999/state` answered 200 with the real unit's live sensors**, and
+  an action on device 999 would have commanded the real robot and filed the audit
+  row under 999. Every device-scoped route now 404s on an unknown device.
+- **`AdminSecretCrypto::decrypt` returned the ciphertext on failure**, so after a
+  key rotation the app would send `enc:v1:…` to Whisker as the password and
+  report a credential error. It now throws, and the UI says the stored
+  credentials need re-entering.
+- A bridge *failure* body was being merged in as if it were state, putting a
+  string into the integer `error` field — which the GUI read as a mechanical
+  fault.
+- Wait time was clamped to 1..60 when the device accepts only `[3, 7, 15, 25, 30]`
+  (note: **no 5**). Both layers now validate against the enum and reject rather
+  than clamp. A non-numeric value returned HTTP 500 with a traceback; it is a 400.
+- Pagination reported the page size as the total (`?limit=2` → `total: 2` with 8
+  rows).
+- Overlapping maintenance rules double-reported (drawer 98% fired both warn and
+  danger).
 
 ### Changed
 
-- **Dashboard reorganized into three zones** — at-a-glance hero → controls + live
-  theater (with the error alert folded in beside the controls) → activity +
-  lifetime/health — so the page reads glance → act → review. Maintenance
-  advisories are demoted to the bottom and only render when there are hints.
-- Lifetime stats + the model/firmware identity card were extracted into a shared
-  `LifetimeStats.vue` reused by both the Dashboard and History (previously buried
-  in the Maintenance panel).
-- **History mission rows are now visual cards** — outcome badge (Complete /
-  Error / In progress), relative date ("Today 14:20"), duration and coverage —
-  instead of a plain `#id · cycle` line.
-
-## [0.5.2] - 2026-07-25
-
-### Changed
-
-- **Operator Settings tab no longer carries admin-only tools.** Robot Auto-
-  discover, hold-HOME onboarding and data-retention prune were duplicated in the
-  operator Settings view; they now live solely in Administration → NC Litter
-  (where they already existed). Settings keeps the schedule and cleaning
-  preferences and points admins to the admin page for the rest.
-
-### Fixed
-
-- More clipping hardening: list titles/meta (long BLID/IP strings) now wrap
-  with `overflow-wrap` instead of overflowing their row.
-
-## [0.5.1] - 2026-07-25
-
-### Fixed
-
-- **UI felt frozen and needed a manual browser refresh.** SSE can stay "open"
-  behind a buffering proxy while no frames actually arrive. The store now runs a
-  slow background poll (6 s) alongside SSE as a safety net, drops to a faster
-  3 s poll the moment SSE errors (was: only after 2 failures), and refreshes
-  immediately when the tab regains focus/visibility. Data stays live without a
-  reload.
-- **Labels and values clipped out of their boxes.** Status-strip chips forced a
-  single line with no overflow handling, and stat / mission-metric values had no
-  wrapping. Chips now cap to the row width and wrap long labels; stat and metric
-  values wrap (`overflow-wrap` + `min-width:0`) instead of spilling past their
-  borders (e.g. firmware strings, large coverage numbers).
-
-## [0.5.0] - 2026-07-25
-
-### Fixed
-
-- **App tabs could not be scrolled** — the main content region was a flex child
-  with no `overflow-y`, so anything below the fold was unreachable. The shell now
-  bounds its height and `.nc-litter-main` owns a real scroll region
-  (`overflow-y:auto; min-height:0`); the status strip and nav stay pinned above.
-- **Battery showed a red 0% while charging.** A freshly power-cycled robot
-  reports `batPct: 0` until the BMS recalibrates over the first charge cycle.
-  `batteryLabel`/`batteryClass` are now phase-aware: 0% during `charge` renders
-  as a neutral "Charging…" instead of a critical reading (normal buckets
-  unchanged when a real percentage is reported).
+- **DTO contract.** Added `status_code`, `last_poll_ok_at`, `poll_error`,
+  `last_seen`, `litter_level_state`, `cycles_since_full`, `cycle_capacity`,
+  `scoops_saved`, `night_light_mode`, `night_light_brightness`,
+  `panel_brightness`, `power_on`, `power_type`, `wait_time`, `hopper_status`,
+  `hopper_removed`, `wifi_mode`. **Removed `rssi` and `wifi_ssid`** — the device
+  has neither. `capabilities` gained `reset`, `sleep_schedule_read` and
+  `wait_time_values`, and `sleep` is now `false`.
+- **Action set.** `sleep_on` / `sleep_off` removed. `reset` added as the honest
+  name; `empty` and `reset_drawer` kept as deprecated aliases.
+- Device settings are read through to the unit rather than mirrored in
+  `settings_json`, which had gone stale (the row said wait time 3; the device
+  said 7).
+- Post-write behaviour: instead of one immediate refresh that always captured the
+  pre-change value, the bridge re-polls at +5/+10/+20s. Measured on the real
+  unit, a night-light toggle takes well over 30 seconds to be reported back.
 
 ### Added
 
-- **Dock / ready chip** in the status strip decoding phase + `not_ready` into
-  "On dock / Off dock / Not ready" instead of a raw bitfield.
-- **Charging-calibration hint** on the mission stage explaining the 0%-while-
-  charging behavior so it does not read as a fault.
-- **"About the robot" identity card** and richer lifetime stats in Maintenance:
-  model (`sku`), firmware (`software_version`), mission success rate, average
-  mission length, and cliff-pick / panic counts — all from data the robot
-  already reports.
+- **Contract tests against the installed `pylitterbot`** (not a test double).
+  They assert every property the normalizer reads exists, every dispatched method
+  exists *and is implemented*, no allowed action is an orphan, the wait-time enum
+  matches, and every upstream `LitterBoxStatus` code is mapped with none invented.
+  One test asserts sleep is *still* unimplemented upstream, so it fails on purpose
+  the day that changes. A fake robot that implemented `set_sleep_mode` is exactly
+  how the broken Sleep button shipped.
+- 23 GUI component tests (there were none) and a fixture built from the captured
+  real DTO — the old fixture asserted `rssi: -52` and a sleep schedule this
+  device cannot produce, which is *why* the dead Wi-Fi UI and the false "Saved"
+  shipped.
+- PHP tests for the cycle state machine, the reaper, rising-edge notifications,
+  the retention floor, the DTO key set, and degraded-cloud responses.
+- Rewrote the preflight and live-bridge gate scripts, which were still
+  nc-roomba's: they asserted `battery_pct`, `has_pose`, `pause`/`resume`/`dock`,
+  a `/schedule` endpoint and `bridge/index.js`, none of which exist here, and
+  read a version from a `bridge/package.json` that a Python bridge does not have.
+  The live gates now check the DTO contract, that vacuum-era verbs are rejected,
+  and that the in-image contract tests pass.
+- Alfred (OpenClaw) Talk skill: `@alfred litter status | clean | reset |
+  light-on | light-off | lock | unlock | help`, plus a monitor that posts
+  drawer-full / litter-low / fault / offline transitions to a Talk room.
+- A `Power` control in Settings (the capability was reported but had no UI).
 
-### Changed
+## [0.1.0] - 2026-07-29
 
-- **Onboarding hardened for repeatable setup.** `onboard()` now names the robot
-  from the value it reports (`robotname`) instead of hardcoding "Alfred", stores
-  its model `sku`, and maps get-password failures to actionable messages
-  (not-in-onboarding → hold HOME; ECONNREFUSED → close the iRobot app;
-  unreachable → check Wi-Fi/IP) rather than a generic `get_password_failed`.
-
-## [0.4.0] - 2026-07-25
-
-### Changed
-
-- **Onboarding guidance reordered around what actually works.** Live onboarding
-  of a Litter-Robot 960 (Alfred) showed the Soft-AP factory path is unreliable on the
-  960 — it associates at Wi-Fi L2 but often serves no setup service (no DHCP /
-  MQTT at `192.168.10.1`), even after factory reset. The reliable, app-free
-  route is: get the robot on Wi-Fi (iRobot app once, if needed), then
-  **hold HOME → Retrieve credentials** over the LAN. The admin page now opens
-  and leads with Auto-discover + hold-HOME (a success NoteCard), and the Soft-AP
-  wizard is labelled a fallback.
-- `docs/OPERATOR.md` leads with the hold-HOME LAN takeover; Soft-AP is the
-  fallback with the 960 setup-service caveat and full-minute battery-pull
-  recovery. Added a troubleshooting row for `battery 0 / not_ready 15` = robot
-  off the dock (not a connection fault) and for the 960 "gateway never
-  responded" Soft-AP case.
+Initial release: a Nextcloud app for the Whisker Litter-Robot 4 via the Whisker
+cloud.
 
 ### Added
 
-- `docs/REVIEW.md` — a plain-language tour of every improvement (0.1.0 → 0.4.0),
-  Alfred's current live state, and how to review the app yourself.
-- SetupWizard shows the 960 Soft-AP caveat + battery-pull tip and points to the
-  hold-HOME path when the robot is already on Wi-Fi.
-- Documented `.env` `BLID` / `PASSWORD` / `ROBOT_IP` as the headless
-  auto-reconnect persistence for the bridge (verified across a container
-  recreate).
-
-## [0.3.2] - 2026-07-25
-
-### Fixed
-
-- Soft-AP join reported success without actually associating: `iw connect` returns
-  as soon as the request is queued, so the link could stay `NO-CARRIER` while the
-  helper went on to assign the static IP and ping the gateway. `joinSoftAp` now
-  calls a new `waitAssociated()` that polls `iw dev <iface> link` for the real
-  "Connected to" carrier before proceeding, and disconnects + retries on failure.
-  Verified live against a Litter-Robot 960 Soft-AP: association is now solid (was 0%).
-- Host Wi-Fi regulatory domain was left at the unset `country 00`, which throttles
-  channel-1 TX power enough that association to a weak open Soft-AP can silently
-  fail. `ensureRadioUp()` now runs `iw reg set US` (override via
-  `LITTER_WIFI_REGDOM`) and disables power-save for the short-lived Soft-AP session.
-
-### Added
-
-- Request-level logging in the Wi-Fi helper (`--> METHOD /path` / `<-- ... status
-  ms`, body never logged since it carries the home Wi-Fi password) so live Soft-AP
-  attempts are debuggable from `journalctl -u nc-litter-wifi-helper`.
-
-## [0.3.1] - 2026-07-25
-
-### Fixed
-
-- Wi-Fi scanning returned zero networks after any Soft-AP session: `leaveSoftAp`
-  handed the radio back to NetworkManager while the link was down, and every later
-  `nmcli device wifi list` came back empty. The helper now restores managed + up on
-  leave, and `ensureRadioUp()` runs before every scan and join with a 3-pass retry.
-- `joinSoftAp` only computed a centre frequency for channel 1, so a Soft-AP on any
-  other channel was passed to `iw` with no frequency hint. Added `channelToFreq`.
-- Soft-AP discovery only matched `Litter-Robot-<BLID>`; Braava and some newer units
-  advertise `iRobot-<BLID>`. Both prefixes are now accepted for scan and BLID parse.
-- `authExchangePacket` wrote the MQTT remaining-length as a single byte, which
-  corrupts the packet above 127 bytes. Now uses proper varint encoding.
-- Post-provision LAN discovery fell back to `candidates[0]` when no BLID matched,
-  which could target a different robot. It now requires a BLID match or a lone
-  candidate, and polls 4 times (robots take 15-60 s to join home Wi-Fi).
-
-### Added
-
-- `occ nc_litter:home-wifi` to show or seed the home Wi-Fi SSID / passphrase /
-  timezone / country headlessly; the passphrase is encrypted at rest as the admin
-  UI would store it.
-- `home_wifi_password` listed in `AdminSecretCrypto::SECRET_KEYS`.
-
-## [0.3.0] - 2026-07-25
-
-### Added
-
-- **Factory Soft-AP setup wizard** in Administration → NC Litter (name, home Wi‑Fi,
-  Soft-AP scan, provision, LAN connect)
-- Host service `nc-litter-wifi-helper` (`wifi-helper/`) for Soft-AP join + kumy
-  MQTT `wlcfg` provisioning without the iRobot app
-- Bridge APIs `/onboard/softap-scan`, `/onboard/softap-provision`, `/onboard/softap-status`
-- PHP admin routes `/api/admin/setup/softap*`; encrypted `home_wifi_password` appconfig
-- Dogfood script `scripts/softap-dogfood.js` and plan
-  `.cursor/plans/nc-litter-softap-wizard-v0.3.md`
-
-### Fixed
-
-- Admin UI now recognizes `has_password` (was looking only for `password_set`)
-
-### Changed
-
-- Operator guide leads with Soft-AP factory path; hold-HOME is advanced fallback
-
-## [0.2.0] - 2026-07-25
-
-### Added
-
-- Butler visual system (charcoal / brass / cream) and unique Litter-Robot app icon
-- **Mission stage** on the Dashboard — live phase animation, coverage / duration /
-  battery / cycle metrics, optional pose mini-map
-- Advanced Location map (dock origin, fading trail, heading cone) when pose exists;
-  mission-theater fallback when it does not (e.g. Litter-Robot 960)
-- Production docs: `docs/ARCHITECTURE.md`, `CONTRIBUTING.md`, GitHub issue templates
-- Checked-in plan `.cursor/plans/nc-litter-butler-ui-v0.2.md`
-
-### Changed
-
-- Operator-facing copy uses the live robot display name (not hardcoded Alfred)
-- App summary/description are multi-robot; Alfred remains the worked example in docs
-- Dashboard is a Controls + MissionStage split; shell gains a cleaning atmosphere
-
-## [0.1.2] - 2026-07-25
-
-### Fixed
-
-- **Bridge was unreachable from Nextcloud.** The default bridge URL used
-  `nc-litter-bridge` (hyphens) but the container/service resolves as
-  `nc_litter_bridge` (underscores), so every PHP → bridge call failed with
-  `Could not resolve host`. Default fixed everywhere and a `nc-litter-bridge`
-  network alias added so previously-saved URLs keep working.
-- **Live connection to fw2 robots (e.g. Litter-Robot 960) failed silently.** Their
-  old TLS stack lacks RFC 5746 secure renegotiation, which OpenSSL 3 (Node
-  ≥ 17) refuses (`ERR_SSL_UNSAFE_LEGACY_RENEGOTIATION_DISABLED`). Added a
-  `tls.connect` shim (`bridge/lib/tlsLegacy.js`) that enables
-  `SSL_OP_LEGACY_SERVER_CONNECT` + a workable cipher/`SECLEVEL` for the
-  robot's `:8883` endpoint only.
-- **Bridge crash-loop on connect errors.** dorita980 v2 attaches an `error`
-  listener that rethrows, turning a benign auth/reconnect error into an
-  uncaught exception that restarted the container. The manager now strips that
-  listener and handles errors itself.
-- Bad-credentials (MQTT CONNACK code 5) now surfaces a clear message pointing
-  the operator at **Retrieve credentials (hold HOME)** instead of being
-  mislabeled as a session conflict.
-
-### Changed
-
-- `docker-compose.bridge.yml` reads a `.env` for `LITTER_MOCK` / `ROBOT_IP` /
-  `LITTER_DISCOVER_SUBNETS` (real mode requires `LITTER_MOCK=0`).
-
-## [0.1.1] - 2026-07-25
-
-### Added
-
-- Working **Auto discover** on Settings + Admin (UDP + :8883 LAN scan)
-- Discover finds Alfred even when UDP broadcast is silent
-
-### Changed
-
-- Settings: cleaning preferences are real controls (carpet boost, pass count,
-  edge clean, always finish) instead of a raw JSON dump, and the admin-only
-  retention panel can preview *and* apply a prune
-
-
-## [0.1.0] - 2026-07-25
-
-### Added
-
-- Initial NC Litter Nextcloud app (`nc_litter`) for Alfred (Litter-Robot 960)
-- Local MQTT bridge sidecar (`nc-litter-bridge`) using dorita980
-- Dashboard controls: clean, spot, pause, resume, stop, dock, find
-- Status strip, error decoder, mission timeline, schedule week grid
-- Maintenance hints, connection health drawer, NC theme inheritance
-- Mission history from install, CSV/JSON export, retention prune
-- `litter-operators` group ACL, encrypted robot password at rest
-- Notifications + Activity for complete / error / bin / battery
-- Gate suite: `gate-preflight`, `gate-live`, `gate-gui`
+- Python bridge (FastAPI + `pylitterbot`) exposing `/health`, `/state`,
+  `/stream`, `/action/{name}`, `/settings`, `/onboard/login`, `/connect`, with a
+  self-contained mock mode so the app runs with no Whisker account.
+- PHP app: controllers → services → `BridgeClient` → DB, RBAC via the
+  `litter-operators` group, encrypted credentials (`enc:v1:`), command audit,
+  Activity + Notifications, telemetry sampling and retention jobs.
+- Five tables: devices, cycles, cycle events, telemetry samples, command audit.
+- Vue 2.7 + Pinia SPA: Dashboard (status hero, two ring gauges, control pad,
+  animated globe, drawer trend), History (cycle log, detail, timeline, export,
+  achievements), Settings, and Admin (Whisker onboarding).
+- Cat-themed charcoal / tabby-amber theme, LR4 error catalog and maintenance
+  thresholds.

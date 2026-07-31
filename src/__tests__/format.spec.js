@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+	WAIT_TIME_OPTIONS,
 	ageSeconds,
 	catWeightLabel,
 	clockLabel,
@@ -10,10 +11,8 @@ import {
 	lastSeenLabel,
 	litterLabel,
 	litterLevelClass,
+	numberOrNull,
 	ringOffset,
-	rssiClass,
-	rssiLabel,
-	signalBars,
 	sleepWindowLabel,
 	sparklinePoints,
 	statusDetail,
@@ -137,25 +136,12 @@ describe('cat + cycle facts', () => {
 	})
 })
 
-describe('wi-fi + freshness labels', () => {
-	it('grades Wi-Fi signal by dBm', () => {
-		expect(rssiLabel(-52)).toBe('Wi-Fi -52 dBm (strong)')
-		expect(rssiLabel(-68)).toBe('Wi-Fi -68 dBm (ok)')
-		expect(rssiLabel(-82)).toBe('Wi-Fi -82 dBm (weak)')
-		expect(rssiLabel(null)).toBe('Wi-Fi —')
-		expect(rssiClass(-52)).toBe('ok')
-		expect(rssiClass(-72)).toBe('warn')
-		expect(rssiClass(-82)).toBe('danger')
-	})
+describe('freshness labels', () => {
+	// The Wi-Fi grading helpers are gone: an LR4 exposes neither an RSSI nor an
+	// SSID, so `rssiLabel` / `rssiClass` / `signalBars` only ever graded a
+	// permanent null. Their tests passed happily on invented dBm values, which is
+	// how four never-lit signal bars and a permanent "Wi-Fi —" chip shipped.
 
-	it('buckets Wi-Fi into 0-4 signal bars', () => {
-		expect(signalBars(-50)).toBe(4)
-		expect(signalBars(-60)).toBe(3)
-		expect(signalBars(-70)).toBe(2)
-		expect(signalBars(-90)).toBe(1)
-		expect(signalBars(null)).toBe(0)
-		expect(signalBars(undefined)).toBe(0)
-	})
 
 	it('renders a relative last-seen age', () => {
 		expect(lastSeenLabel(0)).toBe('just now')
@@ -204,5 +190,22 @@ describe('gauge geometry', () => {
 		expect(sparklinePoints([{ pct: 50 }], 100, 28)).toBe('0.00,14.00 100.00,14.00')
 		expect(sparklinePoints([])).toBe('')
 		expect(sparklinePoints(null)).toBe('')
+	})
+})
+
+describe('shared numeric + option helpers', () => {
+	it('treats a missing reading as null, not zero', () => {
+		expect(numberOrNull(0)).toBe(0)
+		expect(numberOrNull('4.99')).toBeCloseTo(4.99, 5)
+		expect(numberOrNull(null)).toBe(null)
+		expect(numberOrNull(undefined)).toBe(null)
+		expect(numberOrNull('')).toBe(null)
+		expect(numberOrNull('nope')).toBe(null)
+	})
+
+	it('offers every wait time the unit accepts', () => {
+		// The unit reports [3, 7, 15, 25, 30]; 25 used to be missing here, so a unit
+		// set to 25 minutes in the Whisker app had no matching option at all.
+		expect(WAIT_TIME_OPTIONS).toEqual([3, 7, 15, 25, 30])
 	})
 })

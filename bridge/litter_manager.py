@@ -27,7 +27,7 @@ import asyncio
 import contextlib
 import os
 import time
-from datetime import datetime, time as dtime, timezone
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
 
 import normalizer
@@ -67,12 +67,23 @@ class LitterManager:
         # Health / status bookkeeping.
         self.connected: bool = False
         self.error: str | None = None
+        # Freshness bookkeeping. ``updated_at`` is stamped on every *read*, so it
+        # can never detect staleness on its own; these track the last *successful
+        # upstream poll* instead. After MAX_POLL_FAILURES consecutive failures we
+        # stop claiming to be connected, so a dead Whisker cloud can no longer
+        # present hours-old numbers as live.
+        self.last_poll_ok_at: str | None = None
+        self.poll_error: str | None = None
+        self._poll_failures: int = 0
 
         # In-memory normalized DTO + change notification.
         self._state: dict[str, Any] = {}
         self._subscribers: set[Callable[[dict[str, Any]], None]] = set()
         self._lock = asyncio.Lock()
         self._refresh_task: asyncio.Task | None = None
+        # Post-write convergence polls (see _schedule_converge_polls). Held so
+        # they are not garbage-collected mid-flight and are cancelled on stop().
+        self._converge_tasks: set[asyncio.Task] = set()
 
         # Mock scratch state (only used when self.mock).
         self._mock = _MockState()
@@ -108,6 +119,9 @@ class LitterManager:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._refresh_task
             self._refresh_task = None
+        for task in list(self._converge_tasks):
+            task.cancel()
+        self._converge_tasks.clear()
         if self._account is not None and not self.mock:
             disconnect = getattr(self._account, "disconnect", None)
             if callable(disconnect):
@@ -125,7 +139,7 @@ class LitterManager:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                self.error = f"refresh_failed: {exc}"
+                self._note_poll_failure(f"refresh_failed: {_exc_text(exc)}")
             await asyncio.sleep(max(1.0, self.refresh_s))
 
     async def _refresh_once(self) -> None:
@@ -139,8 +153,26 @@ class LitterManager:
         refresh = getattr(self._robot, "refresh", None)
         if callable(refresh):
             await refresh()
-        self.error = None
+        self._note_poll_success()
         self._set_state(normalizer.normalize(self._robot, self._meta()))
+
+    def _note_poll_success(self) -> None:
+        self.error = None
+        self.poll_error = None
+        self._poll_failures = 0
+        self.last_poll_ok_at = _now_iso()
+        self.connected = True
+
+    def _note_poll_failure(self, message: str) -> None:
+        self.error = message
+        self.poll_error = message
+        self._poll_failures += 1
+        if self._poll_failures >= MAX_POLL_FAILURES:
+            self.connected = False
+        # Re-stamp the DTO so /state carries the failure without waiting for the
+        # next successful poll (which may never come).
+        if self._state:
+            self._set_state({**self._state, **self._freshness_meta()})
 
     # ------------------------------------------------------------------
     # State + SSE subscription
@@ -153,6 +185,14 @@ class LitterManager:
             "bridge_version": self.version,
             "uptime_s": int(time.monotonic() - self._start_monotonic),
             "updated_at": _now_iso(),
+            **self._freshness_meta(),
+        }
+
+    def _freshness_meta(self) -> dict[str, Any]:
+        return {
+            "last_poll_ok_at": self.last_poll_ok_at,
+            "poll_error": self.poll_error,
+            "connected": self.connected,
         }
 
     def _set_state(self, dto: dict[str, Any]) -> None:
@@ -166,11 +206,17 @@ class LitterManager:
     def _recompute_from_mock(self) -> None:
         self.connected = True  # mock is always "connected"
         self.error = None
+        self.poll_error = None
+        self.last_poll_ok_at = _now_iso()
+        self._poll_failures = 0
         self._set_state(normalizer.normalize(self._mock.as_source(), self._meta()))
 
     def get_state(self) -> dict[str, Any]:
         # Refresh bridge-side bookkeeping (uptime) on read without renotifying.
-        self._state = {**self._state, "updated_at": _now_iso()}
+        # ``updated_at`` is a *read* stamp and must never be mistaken for
+        # freshness -- ``last_poll_ok_at`` / ``poll_error`` carry that, and they
+        # are re-projected here so a read always reflects current poll health.
+        self._state = {**self._state, "updated_at": _now_iso(), **self._freshness_meta()}
         self._state["bridge"] = {
             **self._state.get("bridge", {}),
             "uptime_s": int(time.monotonic() - self._start_monotonic),
@@ -317,27 +363,41 @@ class LitterManager:
     # ALLOWED_ACTIONS -> (mock handler, live coroutine factory). The live
     # factory takes the bound robot and returns an awaitable.
     #
-    # pylitterbot method mapping (confirmed against 2025.6.2 unless noted):
+    # pylitterbot method mapping (verified against 2025.6.2 by introspecting the
+    # installed LitterRobot4 class -- not assumed):
     #   clean                 -> robot.start_cleaning()
-    #   empty / reset_drawer  -> robot.reset()            [LR4; see note below]
-    #   sleep_on              -> robot.set_sleep_mode(True, <default start>)
-    #   sleep_off             -> robot.set_sleep_mode(False)
+    #   reset                 -> robot.reset()            [see note below]
     #   night_light_on/off    -> robot.set_night_light(True/False)
     #   panel_lock_on/off     -> robot.set_panel_lockout(True/False)
     #   power_on/off          -> robot.set_power_status(True/False)
-    #   set_wait_time (n)     -> robot.set_wait_time(n)
+    #   set_wait_time (n)     -> robot.set_wait_time(n), n in VALID_WAIT_TIMES
     #
-    # NOTE (empty/reset_drawer): pylitterbot 2025.6.2 does NOT expose a
-    # ``reset_waste_drawer()``/``reset_waste_drawer_level()`` method. The LR4
-    # object provides ``reset()`` ("perform reset") which is the closest
-    # documented reset primitive, so we use that. If a future pylitterbot adds a
-    # dedicated waste-drawer reset, prefer it here.
-    DEFAULT_SLEEP_START = dtime(hour=22, minute=0)  # 10pm local default
+    # NOTE (reset): ``LitterRobot4.reset()`` dispatches SHORT_RESET_PRESS, whose
+    # own docstring reads "Clears errors and may trigger a cycle. Make sure the
+    # globe is clear before proceeding." It does NOT empty the waste drawer and
+    # does NOT reset the drawer-full cycle counter -- emptying is a manual job.
+    # An earlier revision exposed this as both ``empty`` and ``reset_drawer``,
+    # two names for one command that did neither thing. ``empty`` is kept only as
+    # a deprecated alias so existing callers do not break.
+    #
+    # NOTE (sleep): there is deliberately NO sleep action.
+    # ``LitterRobot4.set_sleep_mode`` is ``raise NotImplementedError()`` and
+    # ``LitterRobot4Command`` has no sleep verb, so the library offers no write
+    # path at all. The sleep *window* is still read and surfaced
+    # (``sleep_schedule``); it is changed in the Whisker app. Advertising a
+    # control we cannot honour produced a 502 with an empty error message.
+    RESET_ALIASES = ("reset", "empty", "reset_drawer")
 
     async def run_action(self, name: str, **kwargs: Any) -> dict[str, Any]:
         name = (name or "").strip().lower()
         if name not in ALLOWED_ACTIONS:
             return {"ok": False, "result": {}, "error": "unsupported_action"}
+
+        # Validate before touching the device so a bad request is a clean 400
+        # rather than an upstream exception (or, worse, a silent default of 0).
+        invalid = self._validate_action(name, kwargs)
+        if invalid is not None:
+            return {"ok": False, "result": {"action": name}, "error": invalid}
 
         if self.mock:
             self._mock.apply_action(name, **kwargs)
@@ -350,23 +410,72 @@ class LitterManager:
         try:
             result = await self._dispatch_live(name, **kwargs)
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "result": {"action": name}, "error": str(exc)}
+            # NotImplementedError and friends stringify to '', which surfaced to
+            # operators as a failure with no reason at all.
+            return {"ok": False, "result": {"action": name}, "error": _exc_text(exc)}
 
-        # Reflect the change quickly rather than waiting for the next poll.
+        # Converge on the new state instead of polling once, immediately.
+        #
+        # Measured on the real unit: the Whisker cloud takes *tens of seconds* to
+        # report a write back. A single refresh fired right after the command
+        # reliably captured the pre-change value, so the UI showed the old state
+        # and the command looked like it had failed (night-light on/off appeared
+        # inert for ~40s, then flipped on its own). ``toggle_hopper``'s own
+        # docstring in pylitterbot notes the same ~5s+ lag.
         with contextlib.suppress(Exception):
             await self._refresh_once()
+        self._schedule_converge_polls()
         return {"ok": True, "result": {"action": name, "returned": result}, "error": None}
+
+    def _schedule_converge_polls(self) -> None:
+        """Re-poll a few times after a write so the UI converges on the truth.
+
+        Fire-and-forget; each poll pushes an SSE frame if anything changed.
+        """
+        if self.mock:
+            return
+
+        async def _converge() -> None:
+            for delay in CONVERGE_POLL_DELAYS_S:
+                await asyncio.sleep(delay)
+                with contextlib.suppress(Exception):
+                    await self._refresh_once()
+
+        task = asyncio.create_task(_converge())
+        self._converge_tasks.add(task)
+        task.add_done_callback(self._converge_tasks.discard)
+
+    def valid_wait_times(self) -> list[int]:
+        """The wait times this device accepts (the device rejects all others)."""
+        candidate = getattr(self._robot, "VALID_WAIT_TIMES", None) if self._robot else None
+        if not candidate:
+            candidate = DEFAULT_VALID_WAIT_TIMES
+        return [int(w) for w in candidate]
+
+    def _validate_action(self, name: str, kwargs: dict[str, Any]) -> str | None:
+        """Return an error slug when the request is not answerable, else None."""
+        if name != "set_wait_time":
+            return None
+        raw = kwargs.get("wait_time", kwargs.get("minutes"))
+        if raw is None or raw == "":
+            return "wait_time_required"
+        try:
+            minutes = int(raw)
+        except (TypeError, ValueError):
+            return "wait_time_not_a_number"
+        allowed = self.valid_wait_times()
+        if minutes not in allowed:
+            return "wait_time_invalid: must be one of " + ",".join(
+                str(w) for w in allowed
+            )
+        return None
 
     async def _dispatch_live(self, name: str, **kwargs: Any) -> Any:
         r = self._robot
         if name == "clean":
             return await r.start_cleaning()
-        if name in ("empty", "reset_drawer"):
-            return await r.reset()  # assumed: closest reset primitive (see NOTE)
-        if name == "sleep_on":
-            return await r.set_sleep_mode(True, self.DEFAULT_SLEEP_START)
-        if name == "sleep_off":
-            return await r.set_sleep_mode(False)
+        if name in self.RESET_ALIASES:
+            return await r.reset()  # clears errors, may spin the globe (see NOTE)
         if name == "night_light_on":
             return await r.set_night_light(True)
         if name == "night_light_off":
@@ -380,7 +489,8 @@ class LitterManager:
         if name == "power_off":
             return await r.set_power_status(False)
         if name == "set_wait_time":
-            minutes = int(kwargs.get("wait_time", kwargs.get("minutes", 0)) or 0)
+            # Already validated against VALID_WAIT_TIMES by _validate_action.
+            minutes = int(kwargs.get("wait_time", kwargs.get("minutes")))
             return await r.set_wait_time(minutes)
         raise ValueError("unsupported_action")
 
@@ -394,8 +504,13 @@ class LitterManager:
             "night_light": bool(s.get("night_light")),
             "panel_lock": bool(s.get("panel_lock")),
             "wait_time": self._current_wait_time(),
+            # The set the device will accept, so the UI can offer exactly those
+            # and nothing else (it rejects anything outside them, e.g. 5).
+            "wait_time_values": self.valid_wait_times(),
             "sleep": s.get("sleep_schedule"),
             "sleeping": bool(s.get("sleeping")),
+            # LR4 sleep is readable but not writable through pylitterbot.
+            "sleep_writable": False,
         }
 
     def _current_wait_time(self) -> int | None:
@@ -410,22 +525,43 @@ class LitterManager:
         return None
 
     async def set_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Apply a settings patch. Only present keys are changed."""
+        """Apply a settings patch. Only present keys are changed.
+
+        Returns ``{ok, settings, errors}``. Every per-key outcome is collected
+        and reported: an earlier revision discarded the ``run_action`` results
+        and the HTTP layer hard-coded ``ok: True``, so the app told operators
+        "Saved" for writes that had actually failed (and, for sleep, could
+        never succeed).
+        """
         payload = payload or {}
+        errors: dict[str, str] = {}
+
+        async def _apply(key: str, action: str, **kwargs: Any) -> None:
+            outcome = await self.run_action(action, **kwargs)
+            if not outcome.get("ok"):
+                errors[key] = str(outcome.get("error") or "action_failed")
+
         if "night_light" in payload:
-            await self.run_action(
-                "night_light_on" if payload["night_light"] else "night_light_off"
+            await _apply(
+                "night_light",
+                "night_light_on" if payload["night_light"] else "night_light_off",
             )
         if "panel_lock" in payload:
-            await self.run_action(
-                "panel_lock_on" if payload["panel_lock"] else "panel_lock_off"
+            await _apply(
+                "panel_lock",
+                "panel_lock_on" if payload["panel_lock"] else "panel_lock_off",
             )
         if "wait_time" in payload and payload["wait_time"] is not None:
-            await self.run_action("set_wait_time", wait_time=int(payload["wait_time"]))
+            await _apply("wait_time", "set_wait_time", wait_time=payload["wait_time"])
         if "sleep" in payload and isinstance(payload["sleep"], dict):
-            enabled = bool(payload["sleep"].get("enabled"))
-            await self.run_action("sleep_on" if enabled else "sleep_off")
-        return self.get_settings()
+            # Read-only on an LR4 (see the sleep NOTE above). Say so plainly
+            # instead of dispatching a command that cannot exist.
+            errors["sleep"] = (
+                "sleep_read_only: the LR4 sleep schedule can only be changed in "
+                "the Whisker app"
+            )
+
+        return {"ok": not errors, "settings": self.get_settings(), "errors": errors}
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +580,7 @@ class _MockState:
         self.cat_weight = 9.2
         self.cycle_count = 3
         self.cycles_total = 214
+        self.cycles_since_full = 3
         self.sleeping = False
         self.night_light = True
         self.panel_lock = False
@@ -474,6 +611,7 @@ class _MockState:
             self.status_code = "CCP"
             self.cycle_count += 1
             self.cycles_total += 1
+            self.cycles_since_full += 1
             self.drawer_level = min(100.0, self.drawer_level + 1.3)
             self.litter_level = max(0.0, self.litter_level - 0.7)
         else:
@@ -486,15 +624,14 @@ class _MockState:
             self.status_code = "CCP"
             self.cycle_count += 1
             self.cycles_total += 1
+            self.cycles_since_full += 1
             self.drawer_level = min(100.0, self.drawer_level + 1.3)
-        elif name in ("empty", "reset_drawer"):
-            self.drawer_level = 0.0
-            self.cycle_count = 0
+        elif name in ("reset", "empty", "reset_drawer"):
+            # Mirrors the real command: clears the fault/status, does NOT empty
+            # the drawer and does NOT reset any counter. The mock used to zero
+            # the drawer and the cycle count, which made the mock pass tests the
+            # real device would fail.
             self.status_code = "RDY"
-        elif name == "sleep_on":
-            self.sleeping = True
-        elif name == "sleep_off":
-            self.sleeping = False
         elif name == "night_light_on":
             self.night_light = True
         elif name == "night_light_off":
@@ -513,40 +650,65 @@ class _MockState:
             self.wait_time = int(kwargs.get("wait_time", kwargs.get("minutes", self.wait_time)) or self.wait_time)
 
     def as_source(self) -> dict[str, Any]:
-        """Shape matching the attribute names normalize() reads."""
+        """Shape matching the attribute names normalize() reads.
+
+        Kept deliberately close to the real ``LitterRobot4`` property surface --
+        no ``rssi``/``wifi_ssid`` (the device has neither), and
+        ``cycles_after_drawer_full`` present because the real one has it.
+        """
         return {
             "name": self.device()["name"],
             "status_code": self.status_code,
             "is_sleeping": self.sleeping,
             "is_online": self.online,
+            "is_on": self.online,
             "is_waste_drawer_full": self.drawer_level >= 99.0,
             "waste_drawer_level": self.drawer_level,
             "litter_level": self.litter_level,
+            "litter_level_state": "OPTIMAL" if self.litter_level > 20 else "LOW",
             "pet_weight": self.cat_weight,
             "cycle_count": self.cycle_count,
             "cycles_total": self.cycles_total,
+            "cycles_after_drawer_full": self.cycles_since_full,
+            "cycle_capacity": 46,
+            "scoops_saved_count": self.cycles_total * 3,
+            "clean_cycle_wait_time_minutes": self.wait_time,
             "night_light_mode_enabled": self.night_light,
+            "night_light_mode": "ON" if self.night_light else "OFF",
+            "night_light_brightness": 128 if self.night_light else 0,
             "panel_lock_enabled": self.panel_lock,
+            "panel_brightness": "MEDIUM",
+            "power_type": "AC",
+            "hopper_status": None,
+            "is_hopper_removed": False,
+            "wifi_mode_status": "ROUTER_CONNECTED" if self.online else "OFFLINE",
+            "last_seen": _now_iso(),
             "sleep_schedule": {
                 "enabled": self.sleeping,
                 "start_time": "22:00",
                 "end_time": "06:00",
+                "writable": False,
             } if self.sleeping else None,
-            "rssi": -52,
-            "wifi_ssid": "mock-wifi",
+            "VALID_WAIT_TIMES": list(DEFAULT_VALID_WAIT_TIMES),
         }
 
 
 # ---------------------------------------------------------------------------
 # Allowed action set (the contract; PHP rejects anything not here too).
+#
+# Every entry here is backed by a pylitterbot method that is actually
+# implemented -- verified by introspecting LitterRobot4 rather than reading the
+# docs. ``sleep_on``/``sleep_off`` used to be listed and were removed: the
+# library raises NotImplementedError for LR4 sleep, so they were guaranteed
+# 502s. ``reset`` is the honest name for the short-reset-press command;
+# ``empty``/``reset_drawer`` remain as deprecated aliases for the same thing.
 # ---------------------------------------------------------------------------
 ALLOWED_ACTIONS: frozenset[str] = frozenset(
     {
         "clean",
-        "empty",
-        "reset_drawer",
-        "sleep_on",
-        "sleep_off",
+        "reset",
+        "empty",          # deprecated alias of reset
+        "reset_drawer",   # deprecated alias of reset
         "night_light_on",
         "night_light_off",
         "panel_lock_on",
@@ -557,9 +719,31 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset(
     }
 )
 
+# Wait times an LR4 accepts. Read off the bound robot when available (see
+# LitterManager.valid_wait_times); this is only the offline default. Note there
+# is no 5 -- the device rejects it outright.
+DEFAULT_VALID_WAIT_TIMES: tuple[int, ...] = (3, 7, 15, 25, 30)
+
+# Consecutive failed polls before the bridge stops reporting itself connected.
+MAX_POLL_FAILURES = 3
+
+# Delays (seconds, cumulative) for the re-polls fired after a write. The Whisker
+# cloud does not reflect a command immediately -- measured at well over 30s on a
+# real LR4 for a night-light toggle -- so one eager refresh is worse than none.
+CONVERGE_POLL_DELAYS_S: tuple[float, ...] = (5.0, 10.0, 20.0)
+
+
+def _exc_text(exc: BaseException) -> str:
+    """Never return an empty error string.
+
+    ``str(NotImplementedError())`` is ``''``, which reached operators as a
+    failed command with no reason given. Fall back to the exception class name.
+    """
+    return str(exc) or exc.__class__.__name__
+
 
 # Fields that change every tick and must NOT by themselves trigger an SSE push.
-_VOLATILE_KEYS = {"updated_at", "bridge"}
+_VOLATILE_KEYS = {"updated_at", "bridge", "last_poll_ok_at"}
 
 
 def _significant_change(prev: dict[str, Any], cur: dict[str, Any]) -> bool:

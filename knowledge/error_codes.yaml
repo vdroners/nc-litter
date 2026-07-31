@@ -1,110 +1,130 @@
+# Human-readable mirror of knowledge/error_codes.json.
+#
+# NO CODE READS THIS FILE — ErrorDecoderService loads the JSON. It exists so the
+# copy operators see can be reviewed and edited comfortably. If you change one,
+# change the other: `make gate-preflight` compares the two and fails on drift.
+#
+# `errors` holds faults and blocking conditions; `not_ready` holds transient or
+# advisory states. An entry may set `kind` to override the section it sits in
+# (RDY uses that so a healthy unit decodes to "none" and raises nothing).
+
+_comment:
+  - "Litter-Robot 4 condition catalog, read by ErrorDecoderService."
+  - "`errors` holds faults and blocking conditions; `not_ready` holds transient or"
+  - "advisory states. An entry may set \"kind\" to override the section it sits in"
+  - "(RDY uses that to decode as \"none\" so a healthy unit raises nothing)."
+  - "Integer keys exist only for the coarse `error` flag the bridge DTO carries;"
+  - only errors.1 (an unnamed fault) is reachable — the decoder never consults an
+  - integer entry when error is 0.
+  - knowledge/error_codes.yaml is a human-readable mirror of this file; keep both in sync.
 errors:
-  "0":
-    title: "All in order"
-    detail: "Alfred reports no fault. The box is clean, calm, and standing by."
-    action: ""
   "1":
-    title: "Something needs a look"
-    detail: "Alfred has flagged a fault but has not named it. It is holding position until the matter is resolved."
-    action: "Check Alfred's status ring and the app for the specific condition, then clear it as advised."
-  "DFS":
-    title: "The waste drawer is full"
-    detail: "The drawer has reached capacity and Alfred will not run another cycle until it is emptied."
+    title: Something needs a look
+    detail: The box has flagged a fault but has not named it. It is holding position until the matter is resolved.
+    action: "Check the box's status ring and the app for the specific condition, then clear it as advised."
+  DFS:
+    title: The waste drawer is full
+    detail: The drawer has reached capacity and the box will not run another cycle until it is emptied.
     action: "Slide out the drawer, tie off and dispose of the liner, seat a fresh one, and return the drawer until it clicks."
-  "SDF":
-    title: "The waste drawer was full at startup"
-    detail: "Alfred woke to find the drawer already at capacity, so it declined to cycle."
-    action: "Empty the drawer and re-seat it; Alfred will resume its duties once it reports clear."
-  "BR":
-    title: "The bonnet has been removed"
-    detail: "The globe bonnet is off or not seated squarely, so Alfred has paused for safety."
+  SDF:
+    title: The waste drawer was full at startup
+    detail: "The box woke to find the drawer already at capacity, so it declined to cycle."
+    action: Empty the drawer and re-seat it; the box will resume its duties once it reports clear.
+  BR:
+    title: The bonnet has been removed
+    detail: "The globe bonnet is off or not seated squarely, so the box has paused for safety."
     action: "Refit the bonnet, aligning the tabs, and press until it settles flush before resuming."
-  "CSF":
-    title: "The cat sensor is troubled"
-    detail: "Alfred's weight sensor is reporting an implausible reading and cannot confirm the globe is clear."
-    action: "Ensure nothing is resting on or against the unit, wipe the base contacts, and let Alfred re-tare on a level floor."
-  "PD":
-    title: "Pinch guard tripped — something is in the path"
-    detail: "Alfred detected an obstruction at the globe opening and stopped the cycle at once to keep your companion safe."
-    action: "Clear anything caught in the opening, confirm the coast is clear, and Alfred will carry on."
-  "SCF":
-    title: "The globe motor has stalled"
-    detail: "The cleaning globe could not turn freely; Alfred halted the motor to avoid strain."
+  CSF:
+    title: The cat sensor is troubled
+    detail: "The box's weight sensor is reporting an implausible reading and cannot confirm the globe is clear."
+    action: "Ensure nothing is resting on or against the unit, wipe the base contacts, and let the box re-tare on a level floor."
+  PD:
+    title: Pinch guard tripped — something is in the path
+    detail: The box detected an obstruction at the globe opening and stopped the cycle at once to keep your companion safe.
+    action: "Clear anything caught in the opening, confirm the coast is clear, and the box will carry on."
+  SCF:
+    title: The globe motor has stalled
+    detail: The cleaning globe could not turn freely; the box halted the motor to avoid strain.
     action: "Remove the bonnet and globe, clear any clumped litter or debris binding the rollers, refit, and resume."
-  "OTF":
-    title: "Motor over-torque"
-    detail: "The globe drew more force than expected while turning — usually a jam or an overfilled globe."
+  OTF:
+    title: Motor over-torque
+    detail: The globe drew more force than expected while turning — usually a jam or an overfilled globe.
     action: "Reduce the litter to the fill line, check for hardened clumps around the rim, then start a fresh cycle."
-  "SPF":
-    title: "Motor under-torque"
+  SPF:
+    title: Motor under-torque
     detail: "The globe turned with less resistance than expected, which can mean a slipped or disengaged drive."
-    action: "Reseat the globe firmly on its drive collar and confirm it rotates smoothly by hand before resuming."
-  "DHF":
-    title: "Drawer sensor (DFI) needs cleaning"
-    detail: "The drawer-full indicator's laser is obscured, so Alfred cannot judge how full the drawer is."
+    action: Reseat the globe firmly on its drive collar and confirm it rotates smoothly by hand before resuming.
+  DHF:
+    title: Drawer sensor (DFI) needs cleaning
+    detail: "The drawer-full indicator's laser is obscured, so the box cannot judge how full the drawer is."
     action: "Wipe the small laser window and its facing sensor inside the drawer bay with a dry cloth, then re-seat the drawer."
-  "DPF":
-    title: "Drawer position fault"
-    detail: "Alfred cannot confirm the waste drawer is closed and latched."
+  DPF:
+    title: Drawer position fault
+    detail: The box cannot confirm the waste drawer is closed and latched.
     action: "Open the drawer fully, clear the runners of stray litter, and slide it home until it clicks."
-  "HPF":
-    title: "Hall / position sensor fault"
-    detail: "A globe-position sensor is not reporting, so Alfred cannot verify where the globe has stopped."
-    action: "Power-cycle Alfred at the wall for ten seconds; if the fault returns, the unit needs service."
-  "OFF":
-    title: "Alfred is offline"
-    detail: "The unit has dropped off the network and is not reporting its condition."
-    action: "Confirm Alfred has power, check the Wi-Fi and its DHCP reservation, then wait for it to rejoin."
-  "OFFLINE":
-    title: "Alfred has lost its Wi-Fi"
-    detail: "The connection to Alfred has lapsed; the last known state may be stale."
-    action: "Verify the router is up and Alfred is on the expected network; restore the link and telemetry will resume."
-  "USB":
-    title: "Power / USB fault"
-    detail: "Alfred is reporting an unstable supply or a USB accessory fault."
-    action: "Seat the power adapter firmly in the wall and the unit, avoid extension leads, and unplug any suspect USB accessory."
+  HPF:
+    title: Hall / position sensor fault
+    detail: "A globe-position sensor is not reporting, so the box cannot verify where the globe has stopped."
+    action: "Power-cycle the box at the wall for ten seconds; if the fault returns, the unit needs service."
+  OFF:
+    title: The box is switched off
+    detail: "The unit reports itself powered down, so it is not watching for visits or reporting its condition."
+    action: "Use the Power on command, or press the unit's power button until the ring lights; check the adapter if nothing happens."
+  OFFLINE:
+    title: The box has lost its Wi-Fi
+    detail: The connection to the box has lapsed; the last known state may be stale.
+    action: Verify the router is up and the box is on the expected network; restore the link and telemetry will resume.
 not_ready:
-  "0":
-    title: "At your service"
-    detail: "Alfred is ready and awaiting your command."
+  RDY:
+    kind: none
+    title: At your service
+    detail: "No fault reported. The box is clean, calm, and standing by."
     action: ""
-  "1":
-    title: "Just a moment"
-    detail: "Alfred is briefly occupied and not ready for that request yet. It will free itself shortly."
-    action: "Wait a few seconds and try again."
-  "CCP":
-    title: "Cleaning cycle in progress"
-    detail: "Alfred is mid-cycle, tidying the globe. New commands wait until it finishes."
-    action: "Give it a moment — the cycle runs for well under two minutes."
-  "CCC":
-    title: "Cycle just finished — settling"
-    detail: "Alfred has completed a clean and is settling back to ready. This clears on its own."
-    action: "No action needed; Alfred will present itself as ready momentarily."
-  "EC":
-    title: "Emptying the globe"
-    detail: "Alfred is running an empty cycle to clear the globe. It cannot take other commands until done."
+  CCP:
+    title: Cleaning cycle in progress
+    detail: "The box is mid-cycle, tidying the globe. New commands wait until it finishes."
+    action: Give it a moment — the cycle runs for well under two minutes.
+  CCC:
+    title: Cycle just finished — settling
+    detail: The box has completed a clean and is settling back to ready. This clears on its own.
+    action: No action needed; the box will present itself as ready momentarily.
+  EC:
+    title: Emptying the globe
+    detail: The box is running an empty cycle to clear the globe. It cannot take other commands until done.
     action: "Let the empty cycle finish, then proceed."
-  "P":
-    title: "Cycle paused"
-    detail: "The cleaning cycle is paused — often because a presence was sensed near the globe."
-    action: "Once the coast is clear, resume the cycle or wait for Alfred to continue on its own."
-  "CD":
-    title: "A guest has been detected"
-    detail: "Alfred sensed your companion in or near the globe and is politely waiting before it cycles."
-    action: "No action needed — Alfred will proceed once its guest has departed."
-  "CSI":
-    title: "Cat sensor interrupted — holding"
-    detail: "The weight sensor was interrupted, so Alfred is holding the cycle out of courtesy."
-    action: "Give it a moment; Alfred resumes automatically once the sensor settles."
-  "CST":
-    title: "Cat sensor timing"
-    detail: "Alfred is running its post-visit timer before cycling, so the litter has a moment to settle."
-    action: "No action needed — the cycle will begin shortly."
-  "PWRU":
-    title: "Powering up"
-    detail: "Alfred is starting and running its self-check before it accepts commands."
-    action: "Wait for the status ring to settle to ready."
-  "SLEEP":
-    title: "Alfred is resting"
-    detail: "The unit is in its scheduled sleep window and will not cycle until it wakes."
-    action: "Wait for the sleep window to end, or adjust the schedule if you need it active now."
+  P:
+    title: Cycle paused
+    detail: The cleaning cycle is paused — often because a presence was sensed near the globe.
+    action: "Once the coast is clear, resume the cycle or wait for the box to continue on its own."
+  DF1:
+    title: Waste drawer nearly full — about two cycles left
+    detail: "The box will keep cycling, but the drawer is close to capacity and will refuse the job shortly."
+    action: Empty the waste drawer at your next convenience and seat a fresh liner.
+  DF2:
+    title: Waste drawer nearly full — about one cycle left
+    detail: One more cycle is all the box expects to fit. After that it will hold until the drawer is emptied.
+    action: Empty the waste drawer now to avoid an interrupted visit.
+  CD:
+    title: A guest has been detected
+    detail: The box sensed your companion in or near the globe and is politely waiting before it cycles.
+    action: No action needed — the box will proceed once its guest has departed.
+  CSI:
+    title: Cat sensor interrupted — holding
+    detail: "The weight sensor was interrupted, so the box is holding the cycle out of courtesy."
+    action: Give it a moment; the box resumes automatically once the sensor settles.
+  CST:
+    title: Cat sensor timing
+    detail: "The box is running its post-visit timer before cycling, so the litter has a moment to settle."
+    action: No action needed — the cycle will begin shortly.
+  PWRU:
+    title: Powering up
+    detail: The box is starting and running its self-check before it accepts commands.
+    action: Wait for the status ring to settle to ready.
+  PWRD:
+    title: Powering down
+    detail: The box is shutting down and will stop reporting once it is off.
+    action: Use Power on when you want it back on duty; nothing else is needed.
+  SLEEP:
+    title: The box is resting
+    detail: The unit is in its scheduled sleep window and will not cycle until it wakes.
+    action: "Wait for the sleep window to end, or adjust the schedule in the Whisker app if you need it active now."

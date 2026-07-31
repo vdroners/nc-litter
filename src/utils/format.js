@@ -25,8 +25,29 @@ export const STATUS_LABELS = {
 	offline: { label: 'Offline', tone: 'idle', detail: 'Not reporting. The last reading may be stale.' },
 }
 
-/** Wait-time options the LR4 accepts, in minutes. */
-export const WAIT_TIME_OPTIONS = [3, 7, 15, 30]
+/**
+ * Fallback wait-time options, in minutes. The live DTO is the authority
+ * (`capabilities.wait_time_values` / `settings.wait_time_values`); this list only
+ * covers the moment before the first reading lands. 25 used to be missing here,
+ * so a unit set to 25 min in the Whisker app had no matching option at all.
+ */
+export const WAIT_TIME_OPTIONS = [3, 7, 15, 25, 30]
+
+/**
+ * Coerce a reading to a finite number, or null when the unit did not report it.
+ * Shared so the store, the hero and the stage cannot drift apart on what "no
+ * reading" means (they each had their own copy of this).
+ *
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+export function numberOrNull(value) {
+	if (value === null || value === undefined || value === '') {
+		return null
+	}
+	const n = Number(value)
+	return Number.isFinite(n) ? n : null
+}
 
 /**
  * Accept either a bare status string or a whole state DTO, so components can
@@ -219,61 +240,6 @@ export function clockLabel(value) {
 		return ''
 	}
 	return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-}
-
-/**
- * RSSI is reported in dBm; the buckets follow the usual Wi-Fi rule of thumb
- * (-60 good, -70 usable, worse than -75 is where the cloud link gets flaky).
- *
- * @param {number|null|undefined} rssi
- * @returns {string} label
- */
-export function rssiLabel(rssi) {
-	if (rssi === null || rssi === undefined || Number.isNaN(Number(rssi))) {
-		return 'Wi-Fi —'
-	}
-	const value = Number(rssi)
-	let quality = 'weak'
-	if (value >= -60) {
-		quality = 'strong'
-	} else if (value >= -70) {
-		quality = 'ok'
-	}
-	return `Wi-Fi ${value} dBm (${quality})`
-}
-
-/**
- * @param {number|null|undefined} rssi
- * @returns {'ok'|'warn'|'danger'|''}
- */
-export function rssiClass(rssi) {
-	if (rssi === null || rssi === undefined) {
-		return ''
-	}
-	const value = Number(rssi)
-	if (value >= -65) {
-		return 'ok'
-	}
-	return value >= -75 ? 'warn' : 'danger'
-}
-
-/**
- * How many of 4 Wi-Fi strength bars to light for a dBm reading. Buckets follow
- * the same rule-of-thumb as {@link rssiClass}: >=-55 excellent (4), >=-65 good
- * (3), >=-75 usable (2), otherwise weak (1); no reading lights 0.
- *
- * @param {number|null|undefined} rssi dBm
- * @returns {number} 0..4
- */
-export function signalBars(rssi) {
-	if (rssi === null || rssi === undefined || Number.isNaN(Number(rssi))) {
-		return 0
-	}
-	const v = Number(rssi)
-	if (v >= -55) return 4
-	if (v >= -65) return 3
-	if (v >= -75) return 2
-	return 1
 }
 
 /**

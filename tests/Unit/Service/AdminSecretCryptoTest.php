@@ -4,108 +4,76 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\Tests\Unit\Service;
 
-use OCA\NcLitter\AppInfo\Application;
+use OCA\NcLitter\Exception\SecretDecryptException;
 use OCA\NcLitter\Service\AdminSecretCrypto;
-use OCP\IConfig;
-use OCP\Security\ICrypto;
+use OCA\NcLitter\Tests\Support\FakeCrypto;
+use OCA\NcLitter\Tests\Support\NullLogger;
 use PHPUnit\Framework\TestCase;
-use Psr\Log\LoggerInterface;
 
 class AdminSecretCryptoTest extends TestCase
 {
-	/** @var array<string,string> */
-	private array $store = [];
-
-	private function makeCrypto(): ICrypto
+	private function svc(bool $canDecrypt = true): AdminSecretCrypto
 	{
-		return new class implements ICrypto {
-			public function encrypt(string $plaintext, string $password = ''): string
-			{
-				return 'ENC(' . base64_encode($plaintext) . ')';
-			}
-
-			public function decrypt(string $authenticatedCiphertext, string $password = ''): string
-			{
-				if (!preg_match('/^ENC\((.+)\)$/', $authenticatedCiphertext, $m)) {
-					throw new \RuntimeException('not a fake ciphertext');
-				}
-				return (string) base64_decode((string) $m[1], true);
-			}
-		};
-	}
-
-	private function makeConfig(): IConfig
-	{
-		$store = &$this->store;
-		return new class($store) implements IConfig {
-			/** @var array<string,string> */
-			private array $store;
-
-			public function __construct(array &$store)
-			{
-				$this->store = &$store;
-			}
-
-			public function getAppValue(string $appName, string $key, string $default = ''): string
-			{
-				return $this->store[$appName . ':' . $key] ?? $default;
-			}
-
-			public function setAppValue(string $appName, string $key, string $value): void
-			{
-				$this->store[$appName . ':' . $key] = $value;
-			}
-
-			public function deleteAppValue(string $appName, string $key): void
-			{
-				unset($this->store[$appName . ':' . $key]);
-			}
-		};
-	}
-
-	private function makeLogger(): LoggerInterface
-	{
-		return new class implements LoggerInterface {
-			public function emergency($message, array $context = []): void {}
-			public function alert($message, array $context = []): void {}
-			public function critical($message, array $context = []): void {}
-			public function error($message, array $context = []): void {}
-			public function warning($message, array $context = []): void {}
-			public function notice($message, array $context = []): void {}
-			public function info($message, array $context = []): void {}
-			public function debug($message, array $context = []): void {}
-			public function log($level, $message, array $context = []): void {}
-		};
+		return new AdminSecretCrypto(new FakeCrypto($canDecrypt), new NullLogger());
 	}
 
 	public function testRoundTripEncryptDecrypt(): void
 	{
-		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
+		$svc = $this->svc();
 		$enc = $svc->encrypt('litter-secret');
 		$this->assertStringStartsWith(AdminSecretCrypto::PREFIX, $enc);
 		$this->assertSame('litter-secret', $svc->decrypt($enc));
 	}
 
+	/** A value stored before encryption existed has no prefix and is not a failure. */
 	public function testPlaintextPassthrough(): void
 	{
-		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
-		$this->assertSame('legacy', $svc->decrypt('legacy'));
+		$this->assertSame('legacy', $this->svc()->decrypt('legacy'));
+		$this->assertSame('legacy', $this->svc(canDecrypt: false)->decrypt('legacy'));
 	}
 
 	public function testEmptyNotEncrypted(): void
 	{
-		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
-		$this->assertSame('', $svc->encrypt(''));
-		$svc->set('whisker_password', '');
-		$this->assertArrayNotHasKey(Application::APP_ID . ':whisker_password', $this->store);
+		$this->assertSame('', $this->svc()->encrypt(''));
+		$this->assertSame('', $this->svc()->decrypt(''));
 	}
 
-	public function testSetGetAppConfig(): void
+	/**
+	 * The important one. This used to return the ciphertext, so after an instance
+	 * secret rotation the app posted `enc:v1:...` to Whisker as the account
+	 * password and reported "Whisker rejected those credentials" — sending the
+	 * operator to re-type a password that had never been wrong.
+	 */
+	public function testUndecryptableSecretThrowsInsteadOfReturningCiphertext(): void
 	{
-		$svc = new AdminSecretCrypto($this->makeConfig(), $this->makeCrypto(), $this->makeLogger());
-		$svc->set('whisker_password', 'abc123');
-		$raw = $this->store[Application::APP_ID . ':whisker_password'];
-		$this->assertStringStartsWith(AdminSecretCrypto::PREFIX, $raw);
-		$this->assertSame('abc123', $svc->get('whisker_password'));
+		$stored = AdminSecretCrypto::PREFIX . 'ciphertext-from-an-older-key';
+		$svc = $this->svc(canDecrypt: false);
+
+		$this->expectException(SecretDecryptException::class);
+		$this->expectExceptionMessageMatches('/re-enter/i');
+		$svc->decrypt($stored);
+	}
+
+	public function testUndecryptableSecretNeverLeaksTheCiphertext(): void
+	{
+		$stored = AdminSecretCrypto::PREFIX . 'ciphertext-from-an-older-key';
+		try {
+			$this->svc(canDecrypt: false)->decrypt($stored);
+			$this->fail('decrypt() must not succeed');
+		} catch (SecretDecryptException $e) {
+			$this->assertStringNotContainsString('ciphertext-from-an-older-key', $e->getMessage());
+		}
+	}
+
+	/**
+	 * The appconfig accessors are gone: `whisker_password` was never read or
+	 * written, because the credential lives in `nc_litter_devices.creds_enc`.
+	 */
+	public function testAppConfigAccessorsAreGone(): void
+	{
+		$this->assertFalse(method_exists(AdminSecretCrypto::class, 'get'));
+		$this->assertFalse(method_exists(AdminSecretCrypto::class, 'set'));
+		$this->assertFalse(method_exists(AdminSecretCrypto::class, 'isEncrypted'));
+		$this->assertFalse(defined(AdminSecretCrypto::class . '::SECRET_KEYS'));
 	}
 }

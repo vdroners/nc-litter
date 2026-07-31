@@ -31,10 +31,25 @@ class SettingsController extends Controller
 
 	// ── Device settings (proxied to the bridge) ──────────────────────────────
 
+	/** 404 for a device row that does not exist (see DeviceController::notFound). */
+	private function notFound(int $id): ?JSONResponse
+	{
+		if ($this->devices->getDevice($id) !== null) {
+			return null;
+		}
+		return new JSONResponse(
+			['error' => 'device_not_found', 'device_id' => $id],
+			Http::STATUS_NOT_FOUND,
+		);
+	}
+
 	#[NoAdminRequired]
 	public function getSettings(int $id): JSONResponse
 	{
 		$this->permissions->requireOperator();
+		if (($missing = $this->notFound($id)) !== null) {
+			return $missing;
+		}
 		$result = $this->devices->getSettings($id);
 		return new JSONResponse(
 			$result,
@@ -42,26 +57,50 @@ class SettingsController extends Controller
 		);
 	}
 
+	/**
+	 * Apply a settings patch.
+	 *
+	 * 200 everything applied · 207 some keys applied, `errors` names the rest ·
+	 * 400 nothing we could send (an unsupported or invalid patch) · 502 the device
+	 * or cloud refused every key. The response always carries the per-key `errors`
+	 * map, because the bridge now reports partial success and a 2xx alone is no
+	 * longer proof that anything was saved.
+	 */
 	#[NoAdminRequired]
 	public function setSettings(int $id): JSONResponse
 	{
 		$user = $this->permissions->requireOperator();
+		if (($missing = $this->notFound($id)) !== null) {
+			return $missing;
+		}
 		$params = $this->request->getParams();
 		$patch = is_array($params['settings'] ?? null) ? $params['settings'] : $params;
 		$result = $this->devices->setSettings($id, is_array($patch) ? $patch : []);
-		$status = Http::STATUS_BAD_GATEWAY;
+		return new JSONResponse($result + ['by' => $user->getUID()], $this->saveStatus($result));
+	}
+
+	/** @param array{ok:bool,settings:array<string,mixed>,errors:array<string,string>,error:?string} $result */
+	private function saveStatus(array $result): int
+	{
 		if ($result['ok']) {
-			$status = Http::STATUS_OK;
-		} elseif ($result['error'] === 'no_supported_settings') {
-			$status = Http::STATUS_BAD_REQUEST;
+			return Http::STATUS_OK;
 		}
-		return new JSONResponse($result + ['by' => $user->getUID()], $status);
+		if ($result['settings'] === []) {
+			// Nothing was sent at all, or the bridge could not be reached.
+			return $result['errors'] !== [] ? Http::STATUS_BAD_REQUEST : Http::STATUS_BAD_GATEWAY;
+		}
+		// The device answered, some keys stuck and some did not.
+		return Http::STATUS_MULTI_STATUS;
 	}
 
 	/** Recent `[litter]` alerts the OpenClaw monitor mirrored (empty when off). */
 	#[NoAdminRequired]
 	public function alfredAlerts(): JSONResponse
 	{
+		// The litter alert tail is operator-only like every sibling route. Without
+		// this the sole `NoAdminRequired` method with no permission check let any of
+		// several hundred authenticated users on this instance read it.
+		$this->permissions->requireOperator();
 		return new JSONResponse([
 			'ok' => true,
 			'alerts' => $this->devices->getAlfredAlerts(8),

@@ -120,45 +120,6 @@ class BridgeClient
 	}
 
 	/**
-	 * Proxy the bridge SSE stream to the current PHP output buffer.
-	 * Caller should have already sent SSE response headers.
-	 *
-	 * @return int HTTP status from upstream (0 on transport failure)
-	 */
-	public function proxyStream(int $deviceId = 1, int $timeoutSeconds = 0): int
-	{
-		$url = $this->getBaseUrl() . '/stream?device_id=' . $deviceId;
-		$ch = curl_init($url);
-		if ($ch === false) {
-			return 0;
-		}
-		curl_setopt_array($ch, [
-			CURLOPT_HTTPHEADER => ['Accept: text/event-stream', 'Cache-Control: no-cache'],
-			CURLOPT_CONNECTTIMEOUT => self::CONNECT_TIMEOUT,
-			CURLOPT_TIMEOUT => $timeoutSeconds > 0 ? $timeoutSeconds : 0,
-			CURLOPT_WRITEFUNCTION => static function ($ch, string $chunk): int {
-				echo $chunk;
-				if (function_exists('ob_flush')) {
-					@ob_flush();
-				}
-				flush();
-				return strlen($chunk);
-			},
-			CURLOPT_FOLLOWLOCATION => false,
-		]);
-		$ok = curl_exec($ch);
-		$status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-		if ($ok === false) {
-			$this->logger->warning('BridgeClient SSE proxy failed: {err}', [
-				'err' => curl_error($ch),
-			]);
-			$status = 0;
-		}
-		curl_close($ch);
-		return $status;
-	}
-
-	/**
 	 * @param array<string, scalar>|null $query
 	 * @param array<string, mixed>|null $jsonBody
 	 * @return array{ok:bool,status:int,body:?array,raw:string,error:?string}

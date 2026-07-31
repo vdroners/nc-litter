@@ -40,7 +40,7 @@
 					weight it recorded and the drawer level afterwards. The lifetime totals above
 					come straight from the unit's own odometer.
 				</p>
-				<div v-if="store.canOperate" class="nc-litter-actions">
+				<div v-if="store.canOperateNow" class="nc-litter-actions">
 					<NcButton type="primary" :disabled="!!store.actionPending" @click="cleanNow">
 						{{ store.actionPending === 'clean' ? 'Starting…' : 'Clean now' }}
 					</NcButton>
@@ -143,12 +143,10 @@ export default {
 				{ label: 'Started', value: timestampLabel(cycle.started_at) || '—' },
 				{ label: 'Ended', value: timestampLabel(cycle.ended_at) || 'in progress' },
 			]
-			const seconds = Number(cycle.duration_s)
-			if (Number.isFinite(seconds) && seconds > 0) {
-				rows.push({ label: 'Duration', value: durationLabel(seconds) })
-			} else if (cycle.started_at && cycle.ended_at) {
-				rows.push({ label: 'Duration', value: durationLabel(Number(cycle.ended_at) - Number(cycle.started_at)) })
-			}
+			rows.push({
+				label: 'Duration',
+				value: this.durationOf(cycle) || 'not observed',
+			})
 			if (cycle.status_final) {
 				rows.push({ label: 'Final status', value: statusLabel(cycle.status_final) })
 			}
@@ -247,25 +245,36 @@ export default {
 		/** @param {object} cycle */
 		triggerLabel(cycle) {
 			const trigger = String(cycle.trigger || '')
-			if (trigger === 'manual') {
-				return 'manual cycle'
+			const LABELS = {
+				// 'auto' was missing, so every automatically-detected row leaked the
+				// raw token into the UI.
+				auto: 'automatic cycle',
+				manual: 'manual cycle',
+				empty: 'empty cycle',
+				clean: 'clean cycle',
+				reset: 'reset',
 			}
-			if (trigger === 'empty') {
-				return 'empty cycle'
-			}
-			return trigger || 'clean cycle'
+			return LABELS[trigger] || trigger || 'clean cycle'
 		},
 
-		/** @param {object} cycle */
+		/**
+		 * Duration ONLY when the poller actually observed both cycle boundaries.
+		 *
+		 * `duration_s` is filled from the gap between the two telemetry samples that
+		 * bracketed the cycle, so on a 900 s/1800 s poll it reads 15–30 minutes for a
+		 * cycle the unit finishes in about 90 seconds. A row the poller never saw
+		 * finish (`result: 'interrupted'`) has no measured duration at all, and
+		 * `ended_at - started_at` is the same poll gap by another name.
+		 *
+		 * @param {object} cycle
+		 * @returns {string} label, or '' when there is nothing honest to show
+		 */
 		durationOf(cycle) {
+			if (String(cycle.result || '') === 'interrupted') {
+				return ''
+			}
 			const seconds = Number(cycle.duration_s)
-			if (Number.isFinite(seconds) && seconds > 0) {
-				return durationLabel(seconds)
-			}
-			if (cycle.started_at && cycle.ended_at) {
-				return durationLabel(Number(cycle.ended_at) - Number(cycle.started_at))
-			}
-			return ''
+			return Number.isFinite(seconds) && seconds > 0 ? durationLabel(seconds) : ''
 		},
 
 		/**

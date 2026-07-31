@@ -39,11 +39,13 @@ class Provider implements IProvider
 
 		switch ($event->getSubject()) {
 			case self::SUBJECT_CYCLE_COMPLETE:
+				// Null duration = the cycle ran entirely between two polls, so it was
+				// never timed. See CycleService::PLAUSIBLE_CYCLE_S.
 				$duration = $params['duration_s'] ?? null;
 				$event->setParsedSubject(
 					$duration !== null
 						? $l->t('%1$s finished a clean cycle (%2$ss)', [$device, (string) $duration])
-						: $l->t('%s finished a clean cycle', [$device]),
+						: $l->t('%s finished a clean cycle (duration not observed)', [$device]),
 				);
 				break;
 			case self::SUBJECT_CYCLE_FAULT:

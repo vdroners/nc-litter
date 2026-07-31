@@ -8,16 +8,18 @@
 		:transport="store.transport"
 		:can-admin="store.canAdmin"
 		:error="store.error"
+		:action-error="store.actionError"
 		:tab="tab"
 		@update:tab="onTab"
 		@open-drawer="store.openDrawer()"
 		@close-drawer="store.closeDrawer()"
-		@retry-connect="store.connectTest()">
-		<NcNoteCard v-if="!store.canOperate" type="warning" heading="Read-only access">
-			Commanding the unit needs the <code>litter-operators</code> group (or an
-			administrator account). Status, history and settings stay visible.
-		</NcNoteCard>
-
+		@retry-connect="store.connectTest()"
+		@dismiss-action-error="store.clearActionError()">
+		<!-- No read-only banner: it was unreachable. PageController::index()
+		     already refuses to render the app for anyone outside the operator group
+		     or admin, and the page bootstrap emits no `can_operate` key, so
+		     `store.canOperate` is always true. If lib/Controller/PageController.php
+		     ever starts sending `can_operate`, this is where the banner goes. -->
 		<DashboardView v-if="tab === 'dashboard'" @open-drawer="store.openDrawer()" />
 		<HistoryView v-else-if="tab === 'history'" />
 		<SettingsView v-else-if="tab === 'settings'" />
@@ -25,8 +27,6 @@
 </template>
 
 <script>
-import { NcNoteCard } from '@nextcloud/vue'
-
 import AppShell from './components/AppShell.vue'
 import { useDeviceStore } from './store/device.js'
 import DashboardView from './views/DashboardView.vue'
@@ -50,7 +50,7 @@ function tabFromHash() {
 export default {
 	name: 'App',
 
-	components: { AppShell, DashboardView, HistoryView, NcNoteCard, SettingsView },
+	components: { AppShell, DashboardView, HistoryView, SettingsView },
 
 	props: {
 		bootstrap: {

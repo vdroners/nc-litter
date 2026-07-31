@@ -20,7 +20,7 @@
 			<div class="nc-litter-admin__grid">
 				<label>
 					Display name
-					<input v-model="cfg.name" type="text" placeholder="Alfred">
+					<input v-model="cfg.name" type="text" placeholder="Litter-Robot 4">
 				</label>
 				<label>
 					Whisker account
@@ -152,7 +152,9 @@ export default {
 				talk_room: (this.config.alfred || {}).talk_room || '',
 			},
 			cfg: {
-				name: device.name || 'Alfred',
+				// 'Alfred' is the sibling vacuum's name — an unnamed litter unit is its
+				// model, matching the heading above.
+				name: device.name || 'Litter-Robot 4',
 				account_email: device.account_email || '',
 				whisker_device_id: device.device_id || device.whisker_device_id || '',
 				bridge_url: this.config.bridge_url || '',

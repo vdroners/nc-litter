@@ -78,28 +78,60 @@ def test_mock_action_mutates_state():
     m = LitterManager(_mock_env(), version="0.1.0")
 
     async def run():
-        # Fill the drawer a bit, then reset it via empty.
         await m.run_action("clean")
-        before = m.get_state()["drawer_level_pct"]
-        res_empty = await m.run_action("empty")
-        after = m.get_state()["drawer_level_pct"]
-
+        cleaning = m.get_state()["status"]
         res_nl_off = await m.run_action("night_light_off")
         nl = m.get_state()["night_light"]
+        res_lock = await m.run_action("panel_lock_on")
+        lock = m.get_state()["panel_lock"]
+        return cleaning, res_nl_off, nl, res_lock, lock
 
-        res_sleep = await m.run_action("sleep_on")
-        sleeping = m.get_state()["sleeping"]
-        status_when_sleeping = m.get_state()["status"]
-        return before, after, res_empty, res_nl_off, nl, res_sleep, sleeping, status_when_sleeping
-
-    before, after, res_empty, res_nl_off, nl, res_sleep, sleeping, status = asyncio.run(run())
-    assert res_empty["ok"] is True
-    assert after == 0  # drawer reset
+    cleaning, res_nl_off, nl, res_lock, lock = asyncio.run(run())
+    assert cleaning == "cleaning"
     assert res_nl_off["ok"] is True
     assert nl is False
-    assert res_sleep["ok"] is True
-    assert sleeping is True
-    assert status == "sleeping"
+    assert res_lock["ok"] is True
+    assert lock is True
+
+
+def test_reset_does_not_empty_the_drawer():
+    """``reset`` clears the status; it does NOT empty the drawer.
+
+    The mock used to zero the drawer level and the cycle count on ``empty``,
+    which made the mock pass a behaviour the real device does not have:
+    ``LitterRobot4.reset()`` dispatches SHORT_RESET_PRESS, documented as "clears
+    errors and may trigger a cycle". Emptying the waste drawer is a manual job,
+    so the mock must not fake it.
+    """
+    m = LitterManager(_mock_env(), version="0.1.0")
+
+    async def run():
+        await m.run_action("clean")
+        before = m.get_state()
+        res = await m.run_action("reset")
+        return before, res, m.get_state()
+
+    before, res, after = asyncio.run(run())
+    assert res["ok"] is True
+    assert after["drawer_level_pct"] == before["drawer_level_pct"]
+    assert after["cycle_count"] == before["cycle_count"]
+    assert after["cycles_since_full"] == before["cycles_since_full"]
+    assert after["status"] == "ready"
+
+
+def test_sleep_actions_are_rejected_not_attempted():
+    """No sleep write path exists on an LR4 -- refuse rather than 502.
+
+    ``LitterRobot4.set_sleep_mode`` is ``raise NotImplementedError()`` and
+    ``LitterRobot4Command`` has no sleep verb. These used to be advertised
+    actions that always failed, and because ``str(NotImplementedError())`` is the
+    empty string the operator got a failure with no reason at all.
+    """
+    m = LitterManager(_mock_env(), version="0.1.0")
+    for name in ("sleep_on", "sleep_off"):
+        res = asyncio.run(m.run_action(name))
+        assert res["ok"] is False, name
+        assert res["error"] == "unsupported_action", name
 
 
 def test_mock_set_wait_time_action():
@@ -125,13 +157,98 @@ def test_mock_settings_roundtrip():
     m = LitterManager(_mock_env(), version="0.1.0")
 
     async def run():
-        await m.set_settings({"night_light": False, "panel_lock": True, "wait_time": 3})
-        return m.get_settings()
+        return await m.set_settings(
+            {"night_light": False, "panel_lock": True, "wait_time": 3})
 
-    s = asyncio.run(run())
+    out = asyncio.run(run())
+    assert out["ok"] is True
+    assert out["errors"] == {}
+    s = out["settings"]
     assert s["night_light"] is False
     assert s["panel_lock"] is True
     assert s["wait_time"] == 3
+    assert s["wait_time_values"] == [3, 7, 15, 25, 30]
+    assert s["sleep_writable"] is False
+
+
+def test_settings_reports_per_key_failures_instead_of_claiming_success():
+    """A failed write must not be reported as saved.
+
+    ``set_settings`` used to discard every ``run_action`` result and the HTTP
+    layer hard-coded ``ok: True``, so the app showed "Saved" for writes that had
+    failed -- and for sleep, which can never succeed at all.
+    """
+    m = LitterManager(_mock_env(), version="0.1.0")
+    out = asyncio.run(m.set_settings({"night_light": True, "wait_time": 5}))
+    assert out["ok"] is False
+    assert "wait_time" in out["errors"]
+    assert "3,7,15,25,30" in out["errors"]["wait_time"]
+    assert "night_light" not in out["errors"]  # the valid key still applied
+    assert out["settings"]["night_light"] is True
+
+
+def test_settings_sleep_is_reported_read_only():
+    m = LitterManager(_mock_env(), version="0.1.0")
+    out = asyncio.run(m.set_settings({"sleep": {"enabled": True}}))
+    assert out["ok"] is False
+    assert "sleep_read_only" in out["errors"]["sleep"]
+
+
+def test_wait_time_is_validated_against_the_device_enum():
+    """The device rejects anything outside [3,7,15,25,30] -- note: no 5.
+
+    Validated before dispatch so a bad value is a clean caller error instead of
+    an upstream exception, and a missing value is refused rather than silently
+    becoming 0.
+    """
+    m = LitterManager(_mock_env(), version="0.1.0")
+    for bad, expected in (
+        (5, "wait_time_invalid"),
+        (9, "wait_time_invalid"),
+        (60, "wait_time_invalid"),
+        ("abc", "wait_time_not_a_number"),
+        (None, "wait_time_required"),
+    ):
+        res = asyncio.run(m.run_action("set_wait_time", wait_time=bad))
+        assert res["ok"] is False, bad
+        assert res["error"].startswith(expected), (bad, res["error"])
+    res = asyncio.run(m.run_action("set_wait_time"))
+    assert res["error"] == "wait_time_required"
+    for good in (3, 7, 15, 25, 30):
+        assert asyncio.run(m.run_action("set_wait_time", wait_time=good))["ok"] is True
+
+
+def test_poll_failures_eventually_clear_connected():
+    """A dead cloud must stop looking healthy.
+
+    ``updated_at`` is stamped on every read, so it can never detect staleness;
+    ``last_poll_ok_at`` / ``poll_error`` carry that instead, and after
+    MAX_POLL_FAILURES consecutive failures the bridge stops claiming to be
+    connected rather than serving hours-old numbers as live.
+    """
+    from litter_manager import MAX_POLL_FAILURES
+
+    m = LitterManager(_mock_env(LITTER_MOCK="0"), version="0.1.0")
+    m.mock = False
+    m._robot = _FakeRobot()
+    m._note_poll_success()
+    ok_at = m.last_poll_ok_at
+    assert m.connected is True and m.poll_error is None
+
+    for i in range(1, MAX_POLL_FAILURES + 1):
+        m._note_poll_failure("refresh_failed: boom")
+        assert m.poll_error == "refresh_failed: boom"
+        # The successful-poll timestamp must NOT advance on a failure.
+        assert m.last_poll_ok_at == ok_at
+        assert m.connected is (i < MAX_POLL_FAILURES)
+
+    dto = m.get_state()
+    assert dto["connected"] is False
+    assert dto["poll_error"] == "refresh_failed: boom"
+    assert dto["last_poll_ok_at"] == ok_at
+
+    m._note_poll_success()
+    assert m.connected is True and m.poll_error is None
 
 
 def test_mock_login_returns_a_device():
@@ -147,6 +264,11 @@ def test_mock_login_returns_a_device():
 # ---------------------------------------------------------------------------
 class _FakeRobot:
     """Records which method was called with which args."""
+
+    # Mirrors the real LitterRobot4 surface. Deliberately has NO
+    # ``set_sleep_mode``: the real class raises NotImplementedError, and a fake
+    # that implements it is how the broken sleep action passed its tests.
+    VALID_WAIT_TIMES = [3, 7, 15, 25, 30]
 
     def __init__(self):
         self.calls = []
@@ -165,9 +287,6 @@ class _FakeRobot:
 
     async def reset(self):
         return await self._rec("reset")
-
-    async def set_sleep_mode(self, value, sleep_time=None):
-        return await self._rec("set_sleep_mode", value, sleep_time)
 
     async def set_night_light(self, value):
         return await self._rec("set_night_light", value)
@@ -199,29 +318,25 @@ def test_live_dispatch_maps_names_to_methods():
 
     async def run():
         await m.run_action("clean")
+        await m.run_action("reset")
         await m.run_action("empty")
         await m.run_action("reset_drawer")
-        await m.run_action("sleep_on")
-        await m.run_action("sleep_off")
         await m.run_action("night_light_on")
         await m.run_action("night_light_off")
         await m.run_action("panel_lock_on")
         await m.run_action("panel_lock_off")
         await m.run_action("power_on")
         await m.run_action("power_off")
-        await m.run_action("set_wait_time", wait_time=9)
+        await m.run_action("set_wait_time", wait_time=15)
         return m._robot.calls
 
     calls = asyncio.run(run())
     names = [c[0] for c in calls]
 
     assert names.count("start_cleaning") == 1
-    # empty AND reset_drawer both map to reset().
-    assert names.count("reset") == 2
-    # sleep_on carries a default start time; sleep_off carries False.
-    sleep_calls = [c for c in calls if c[0] == "set_sleep_mode"]
-    assert sleep_calls[0][1][0] is True and sleep_calls[0][1][1] is not None
-    assert sleep_calls[1][1][0] is False
+    # reset + its two deprecated aliases (empty, reset_drawer) are one command.
+    assert names.count("reset") == 3
+    assert "set_sleep_mode" not in names
     # night light + panel lock + power on/off booleans.
     assert ("set_night_light", (True,)) in calls
     assert ("set_night_light", (False,)) in calls
@@ -229,7 +344,7 @@ def test_live_dispatch_maps_names_to_methods():
     assert ("set_panel_lockout", (False,)) in calls
     assert ("set_power_status", (True,)) in calls
     assert ("set_power_status", (False,)) in calls
-    assert ("set_wait_time", (9,)) in calls
+    assert ("set_wait_time", (15,)) in calls
 
 
 def test_live_action_when_not_connected():
@@ -244,7 +359,7 @@ def test_live_action_when_not_connected():
 def test_allowed_actions_contract_set():
     # Guard the exact contract set so a rename can't silently drift.
     assert ALLOWED_ACTIONS == frozenset({
-        "clean", "empty", "reset_drawer", "sleep_on", "sleep_off",
+        "clean", "reset", "empty", "reset_drawer",
         "night_light_on", "night_light_off", "panel_lock_on", "panel_lock_off",
         "power_on", "power_off", "set_wait_time",
     })

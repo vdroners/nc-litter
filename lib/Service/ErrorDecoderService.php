@@ -14,15 +14,23 @@ namespace OCA\NcLitter\Service;
  *     real condition lives.
  *
  * The bridge collapses every fault to `error = 1` and keeps the condition in
- * `status` / `status_label`, so callers should pass the status string alongside
- * the int: a status-code hit always wins over the generic int entry.
+ * `status` / `status_label`, so callers should pass the status alongside the int.
+ * Since the bridge DTO gained `status_code` (the raw LR4 code) the caller can
+ * hand us the precise code; a status-code hit always wins over the generic int
+ * entry.
+ *
+ * A catalog entry may carry an explicit `"kind"` to override the section it sits
+ * in. That is how `RDY` lives in the catalog — documented, resolvable, quotable —
+ * while still decoding to `kind: none` so a healthy unit raises nothing.
  */
 class ErrorDecoderService
 {
 	/**
 	 * Normalized bridge status vocabulary -> the LR4 catalog code that describes
-	 * it. The bridge DTO reports the *normalized* status (`cleaning`, not `CCP`),
-	 * so this table lets the same catalog serve both spellings.
+	 * it. The bridge DTO reports the *normalized* status (`cleaning`, not `CCP`)
+	 * as well as the raw code, so this table lets the same catalog serve both
+	 * spellings — and keeps working for the history rows, which persist only the
+	 * normalized `status_final`.
 	 *
 	 * @var array<string, string>
 	 */
@@ -45,11 +53,11 @@ class ErrorDecoderService
 
 	/**
 	 * @param int $error coarse fault flag from the bridge DTO (0 = clear)
-	 * @param int $notReady legacy numeric "busy" register (LR4 has none; pass 0)
-	 * @param string|null $status LR4 status code or normalized bridge status
+	 * @param string|null $status raw LR4 status code (`BR`) or the normalized
+	 *   bridge status (`drawer_full`); either spelling resolves
 	 * @return array{code:int|string,kind:string,title:string,detail:string,action:string,status_code:?string}
 	 */
-	public function decode(int $error, int $notReady = 0, ?string $status = null): array
+	public function decode(int $error, ?string $status = null): array
 	{
 		$catalog = $this->load();
 		$code = $this->catalogKey($status);
@@ -58,6 +66,9 @@ class ErrorDecoderService
 			// A named status code beats the generic "error 1" entry.
 			if ($code !== null && is_array($catalog['errors'][$code] ?? null)) {
 				return $this->entry('error', $code, $catalog['errors'][$code], $code);
+			}
+			if ($code !== null && is_array($catalog['not_ready'][$code] ?? null)) {
+				return $this->entry('not_ready', $code, $catalog['not_ready'][$code], $code);
 			}
 			if (is_array($catalog['errors'][(string) $error] ?? null)) {
 				return $this->entry('error', $error, $catalog['errors'][(string) $error], $code);
@@ -80,22 +91,6 @@ class ErrorDecoderService
 		}
 		if ($code !== null && is_array($catalog['errors'][$code] ?? null)) {
 			return $this->entry('error', $code, $catalog['errors'][$code], $code);
-		}
-		if ($notReady !== 0) {
-			$entry = $catalog['not_ready'][(string) $notReady] ?? null;
-			if (is_array($entry)) {
-				return $this->entry('not_ready', $notReady, $entry, $code);
-			}
-			// Unknown busy codes are almost always benign, transient states that
-			// clear on their own, so frame it reassuringly rather than as a defect.
-			return [
-				'code' => $notReady,
-				'kind' => 'not_ready',
-				'title' => 'Just a moment',
-				'detail' => 'Alfred is briefly occupied and not ready for that request yet.',
-				'action' => 'Wait a few seconds and try again.',
-				'status_code' => $code,
-			];
 		}
 
 		return [
@@ -155,14 +150,20 @@ class ErrorDecoderService
 	}
 
 	/**
+	 * An entry's own `kind` wins over the section it was found in. `RDY` needs
+	 * that: it belongs in the catalog (it is a real LR4 code operators see in
+	 * logs) but it must decode to `none`, or every healthy poll would present the
+	 * unit as "not ready".
+	 *
 	 * @param array<string, mixed> $entry
 	 * @return array{code:int|string,kind:string,title:string,detail:string,action:string,status_code:?string}
 	 */
 	private function entry(string $kind, int|string $code, array $entry, ?string $statusCode): array
 	{
+		$declared = isset($entry['kind']) ? (string) $entry['kind'] : '';
 		return [
 			'code' => $code,
-			'kind' => $kind,
+			'kind' => $declared !== '' ? $declared : $kind,
 			'title' => (string) ($entry['title'] ?? (string) $code),
 			'detail' => (string) ($entry['detail'] ?? ''),
 			'action' => (string) ($entry['action'] ?? ''),

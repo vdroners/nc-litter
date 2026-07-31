@@ -1,36 +1,57 @@
+# Human-readable mirror of knowledge/maintenance_thresholds.json.
+#
+# NO CODE READS THIS FILE — MaintenanceHintService loads the JSON. It exists so
+# the copy operators see can be reviewed and edited comfortably. If you change
+# one, change the other: `make gate-preflight` compares the two and fails on
+# drift.
+#
+# Every comparator present on a rule must hold (they are ANDed), which is how the
+# warn tiers carry an upper bound so a full drawer fires `danger` alone instead of
+# `warn` and `danger` together.
+
+_comment:
+  - "Maintenance advisories, read by MaintenanceHintService."
+  - "Every comparator present on a rule must hold (they are ANDed), which is how"
+  - "the warn tiers carry an upper bound so a full drawer fires `danger` only"
+  - "instead of `warn` and `danger` together."
+  - knowledge/maintenance_thresholds.yaml is a human-readable mirror of this file;
+  - keep both in sync.
 thresholds:
   - id: drawer_level_warn
-    metric_state: "drawer_level_pct"
+    metric_state: drawer_level_pct
     gte: 90
-    severity: "warn"
-    title: "Waste drawer filling up"
-    detail: "The drawer is nearly full. A tidy household empties it before it insists."
-    action: "Empty the waste drawer at your next convenience and seat a fresh liner."
+    lt: 98
+    severity: warn
+    title: Waste drawer filling up
+    detail: The drawer is nearly full. A tidy household empties it before it insists.
+    action: Empty the waste drawer at your next convenience and seat a fresh liner.
   - id: drawer_level_danger
-    metric_state: "drawer_level_pct"
+    metric_state: drawer_level_pct
     gte: 98
-    severity: "danger"
-    title: "Waste drawer full"
-    detail: "The drawer has reached capacity. Alfred will decline to cycle until it is emptied."
+    severity: danger
+    title: Waste drawer full
+    detail: The drawer has reached capacity. The box will decline to cycle until it is emptied.
     action: "Empty the waste drawer now, fit a new liner, and slide it home until it clicks."
   - id: litter_level_warn
-    metric_state: "litter_level_pct"
+    metric_state: litter_level_pct
     lte: 20
-    severity: "warn"
-    title: "Litter running low"
-    detail: "The globe is getting light on litter. A modest top-up keeps every cycle clean."
-    action: "Add fresh clumping litter up to the fill line inside the globe."
+    gt: 8
+    severity: warn
+    title: Litter running low
+    detail: The globe is getting light on litter. A modest top-up keeps every cycle clean.
+    action: Add fresh clumping litter up to the fill line inside the globe.
   - id: litter_level_danger
-    metric_state: "litter_level_pct"
+    metric_state: litter_level_pct
     lte: 8
-    severity: "danger"
-    title: "Litter critically low"
-    detail: "There is barely enough litter for a proper cycle. Your companion deserves better footing."
-    action: "Refill the globe with fresh litter to the fill line before the next visit."
+    severity: danger
+    title: Litter critically low
+    detail: There is barely enough litter for a proper cycle. Your companion deserves better footing.
+    action: Refill the globe with fresh litter to the fill line before the next visit.
   - id: cycles_since_empty_info
-    metric_state: "cycles_since_empty"
-    gte: 40
-    severity: "info"
-    title: "Several cycles since the last empty"
-    detail: "Alfred has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later."
-    action: "Consider emptying the waste drawer and starting the count fresh."
+    metric_state: cycles_since_empty
+    gte: 10
+    severity: info
+    title: Several cycles since the last empty
+    detail: The box has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.
+    action: Consider emptying the waste drawer and starting the count fresh.
+    _note: "Fed by the device's own cycles_after_drawer_full counter, which resets when the drawer is reset. An LR4 reports cycle_capacity around 14, so the old threshold of 40 could never fire once this metric stopped being a local row count."

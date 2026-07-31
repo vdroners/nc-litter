@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OCA\NcLitter\Util;
 
 use OCA\NcLitter\AppInfo\Application;
-use OCA\NcLitter\Exception\ForbiddenException;
 use OCP\AppFramework\Http;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\IConfig;
@@ -14,6 +13,9 @@ use OCP\IUserSession;
 
 /**
  * Shared admin-or-litter-operators access gate.
+ *
+ * The throwing form lives on PermissionService (`requireOperator`), which is what
+ * every controller calls; the JSON 403 body is built by ForbiddenMiddleware.
  */
 final class LitterGroupAccess
 {
@@ -43,13 +45,6 @@ final class LitterGroupAccess
 		return $groupManager->isInGroup($uid, $groupId);
 	}
 
-	public static function requireAccess(IUserSession $userSession, IGroupManager $groupManager, IConfig $config): void
-	{
-		if (!self::hasAccess($userSession, $groupManager, $config)) {
-			throw new ForbiddenException(self::FORBIDDEN_MESSAGE);
-		}
-	}
-
 	public static function forbiddenPageResponse(): TemplateResponse
 	{
 		return new TemplateResponse(
@@ -59,14 +54,5 @@ final class LitterGroupAccess
 			TemplateResponse::RENDER_AS_ERROR,
 			Http::STATUS_FORBIDDEN,
 		);
-	}
-
-	/** @return array{error: string, message: string} */
-	public static function forbiddenJsonPayload(): array
-	{
-		return [
-			'error' => 'forbidden',
-			'message' => self::FORBIDDEN_MESSAGE,
-		];
 	}
 }

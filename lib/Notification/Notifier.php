@@ -41,11 +41,14 @@ class Notifier implements INotifier
 
 		switch ($notification->getSubject()) {
 			case ActivityProvider::SUBJECT_CYCLE_COMPLETE:
+				// A null duration means the cycle started and finished between two
+				// polls, so nobody timed it. Say that, rather than printing the gap
+				// between samples as though it were the cycle length.
 				$duration = $params['duration_s'] ?? null;
 				$notification->setParsedSubject(
 					$duration !== null
 						? $l->t('%1$s finished a clean cycle (%2$ss)', [$device, (string) $duration])
-						: $l->t('%s finished a clean cycle', [$device]),
+						: $l->t('%s finished a clean cycle (duration not observed)', [$device]),
 				);
 				break;
 			case ActivityProvider::SUBJECT_CYCLE_FAULT:
