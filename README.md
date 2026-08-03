@@ -1,6 +1,6 @@
 # NC Litter
 
-![version](https://img.shields.io/badge/version-0.3.1-D8A45E)
+![version](https://img.shields.io/badge/version-0.3.2-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
 [![GitHub](https://img.shields.io/badge/github-vdroners%2Fnc--litter-181717?logo=github)](https://github.com/vdroners/nc-litter)
 

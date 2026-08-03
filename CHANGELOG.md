@@ -10,6 +10,14 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.3.2] - 2026-08-03
+
+### Fixed
+- App icon redrawn as single-ink `currentColor` cat/litter silhouette for Nextcloud nav/Settings tinting
+- Scoped brand/spacing tokens off `:root` onto `#nc-litter-root` / `#nc-litter-admin` (stops Settings-page token bleed)
+- Nav order set to 87
+
+
 ## [0.3.1] - 2026-08-03
 
 App Store readiness — uninstall cleanup, public OCP paths, packaging, stranger install.

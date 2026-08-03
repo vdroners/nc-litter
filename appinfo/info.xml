@@ -11,7 +11,7 @@
 Includes cycle history, cat-themed achievements, an error decoder, maintenance reminders, and Nextcloud Notifications/Activity. Sleep window and emptying the waste drawer are not remote commands (change sleep in the Whisker app; empty by hand).
 
 **Privacy:** Whisker account email/password are used only to authenticate to Whisker's cloud via the bridge. They are encrypted in the Nextcloud database and are not sent to 19labs or any third party other than Whisker. Optional OpenClaw/Talk alert mirroring reads a confined local log path you configure.]]></description>
-<version>0.3.1</version>
+<version>0.3.2</version>
 <licence>AGPL-3.0-or-later</licence>
 <author mail="dan@19labs.com">19labs</author>
 <namespace>NcLitter</namespace>
@@ -64,7 +64,7 @@ Includes cycle history, cat-themed achievements, an error decoder, maintenance r
 			<name>NC Litter</name>
 			<route>nc_litter.page.index</route>
 			<icon>app.svg</icon>
-			<order>86</order>
+			<order>87</order>
 		</navigation>
 	</navigations>
 </info>

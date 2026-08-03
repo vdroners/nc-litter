@@ -8,7 +8,22 @@
  * Layout target: desktop + 390px phones (control pad stays tappable).
  */
 
-:root {
+/*
+ * Tokens are scoped to the app's own roots, never `:root`.
+ *
+ * This stylesheet is also loaded on the Nextcloud admin settings page, where
+ * other apps render their own sections. A `:root`-level `--nc-app-accent`
+ * there would repaint their chrome (and collide with any sibling app that
+ * declares the same variable — last sheet loaded wins). Scoping to the
+ * elements this app actually owns keeps the tabby amber inside the app.
+ *
+ *   #nc-litter-root  — templates/main.php  (the SPA mount)
+ *   #nc-litter-admin — templates/admin.php (the admin section)
+ *   .nc-litter-mount — Vue mount target created inside #nc-litter-root
+ */
+#nc-litter-root,
+#nc-litter-admin,
+.nc-litter-mount {
 	/* Tabby amber / ginger — the app's accent identity. */
 	--nc-app-accent: #d8a45e;
 	--nc-app-accent-soft: rgba(216, 164, 94, 0.18);
@@ -94,24 +109,44 @@
 
 /* The default Nextcloud theme follows the OS, so key off the media query AND the
  * explicit body themes. The dark rules come last so an explicit dark theme on a
- * light OS still gets the bright amber back. */
-@media (prefers-color-scheme: light) {
-	:root {
-		--nc-litter-tabby-ink: #8a5f1e;
-		--nc-litter-tabby-ink-text: #7a5210;
-	}
-}
-
-body[data-theme-light],
-body[data-theme-light-highcontrast] {
+ * light OS still gets the bright amber back. Tokens stay nested under the app
+ * roots — never bare `:root` or bare `body`. */
+@mixin nc-litter-light-ink {
 	--nc-litter-tabby-ink: #8a5f1e;
 	--nc-litter-tabby-ink-text: #7a5210;
 }
 
-body[data-theme-dark],
-body[data-theme-dark-highcontrast] {
+@mixin nc-litter-dark-ink {
 	--nc-litter-tabby-ink: var(--nc-litter-tabby);
 	--nc-litter-tabby-ink-text: color-mix(in srgb, var(--nc-litter-tabby) 75%, var(--color-main-text));
+}
+
+body[data-theme-light],
+body[data-theme-light-highcontrast] {
+	#nc-litter-root,
+	#nc-litter-admin,
+	.nc-litter-mount {
+		@include nc-litter-light-ink;
+	}
+}
+
+@media (prefers-color-scheme: light) {
+	body[data-theme-default] {
+		#nc-litter-root,
+		#nc-litter-admin,
+		.nc-litter-mount {
+			@include nc-litter-light-ink;
+		}
+	}
+}
+
+body[data-theme-dark],
+body[data-theme-dark-highcontrast] {
+	#nc-litter-root,
+	#nc-litter-admin,
+	.nc-litter-mount {
+		@include nc-litter-dark-ink;
+	}
 }
 
 #nc-litter-root,
