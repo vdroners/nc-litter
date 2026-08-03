@@ -1,6 +1,16 @@
-{ "translations": {
-  "NC Litter": "NC Litter",
-  "Settings": "Settings",
-  "History": "History",
-  "Status": "Status"
-}}
+{
+	"translations": {
+		"NC Litter": "NC Litter",
+		"Dashboard": "Dashboard",
+		"History": "History",
+		"Settings": "Settings",
+		"Start clean": "Start clean",
+		"Reset error": "Reset error",
+		"Connected": "Connected",
+		"Disconnected": "Disconnected",
+		"Save": "Save",
+		"Cancel": "Cancel",
+		"Night light": "Night light",
+		"Panel lock": "Panel lock"
+	}
+}

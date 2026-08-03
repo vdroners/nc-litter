@@ -122,6 +122,7 @@ The bridge contract tests are the important ones: they bind to the *installed*
 
 ## Docs
 
+- Static analysis / l10n: [`docs/STATIC_ANALYSIS.md`](docs/STATIC_ANALYSIS.md) — `l10n/en.json` is scaffolded; full Vue `t()` wrapping is follow-up
 - Operator guide: [`docs/OPERATOR.md`](docs/OPERATOR.md)
 - Install (stranger / GHCR bridge): [`docs/INSTALL.md`](docs/INSTALL.md)
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
