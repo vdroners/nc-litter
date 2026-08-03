@@ -156,7 +156,9 @@ class BridgeClient
 		$errno = curl_errno($ch);
 		$error = $errno !== 0 ? curl_error($ch) : null;
 		$status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-		curl_close($ch);
+		// No curl_close(): the handle is freed when it goes out of scope. The call has
+		// been a no-op since PHP 8.0 and is deprecated in 8.5, which the Nextcloud
+		// image now ships -- it was emitting a deprecation on every bridge request.
 
 		if ($raw === false) {
 			$this->logger->warning('BridgeClient request failed {method} {path}: {err}', [

@@ -15,7 +15,11 @@
 	<repository type="git">https://github.com/vdroners/nc-litter.git</repository>
 	<documentation>https://github.com/vdroners/nc-litter/blob/main/docs/OPERATOR.md</documentation>
 	<dependencies>
-		<php min-version="8.1" max-version="8.4"/>
+		<!-- No PHP upper bound, deliberately. A cap is re-validated by `occ upgrade`
+		     on every app version bump; the Nextcloud image moved to PHP 8.5 while the
+		     sibling vacuum app still declared 8.4, and its next bump failed its own
+		     dependency check and put the WHOLE INSTANCE into maintenance mode. -->
+		<php min-version="8.1"/>
 		<database>sqlite</database>
 		<database>mysql</database>
 		<database>pgsql</database>
