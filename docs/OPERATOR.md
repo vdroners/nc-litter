@@ -12,8 +12,9 @@ This is **not** a local MQTT / Soft-AP product. There is no wifi-helper and no
 
 - Whisker account that already owns the LR4 (set up once in the Whisker app)
 - Nextcloud admins configure the app; operators must be in the `litter-operators` group
-- Bridge container on Docker network `nc-litter-net`, reachable from `cloud_app` as
-  `http://nc_litter_bridge:8080` (underscores; `nc-litter-bridge` alias also resolves)
+- Bridge container on Docker network `nc-litter-net`, reachable from `cloud_app`
+  **and** `cloud_cron` (when used) as `http://nc_litter_bridge:8080`
+  (underscores; `nc-litter-bridge` alias also resolves). See [INSTALL.md](INSTALL.md).
 - For a **real** unit: bridge must run with `LITTER_MOCK=0` (see `.env`)
 
 See also [README — What the LR4 genuinely cannot do](../README.md#what-the-lr4-genuinely-cannot-do)
@@ -53,29 +54,28 @@ Sleep window is **read-only** in NC Litter — change it in the Whisker app.
 
 Optional. Enable under **Administration → NC Litter → Alfred assistant**:
 
-- Talk room token (family hub default `9x4f25n3`)
-- Alert log path (must sit under Nextcloud config/data `nc_litter/`, e.g.
-  `/media/4TB/cloud/nc_config/nc_litter/litter-alerts.jsonl`)
+- Talk room token
+- Alert log path — must sit under an allowed root:
+  `{datadirectory}/nc_litter/`,
+  `{datadirectory}/appdata_{instanceid}/nc_litter/`,
+  or `{temp}/nc_litter/` (see DeviceService confinement)
 
-The host monitor is owned by systemd user timer
-`alfred-cron-litter-monitor.timer` (every 5 minutes). Preflight / ops should
-confirm the timer is active; without it the Dashboard Alfred card stays empty.
-
-```bash
-systemctl --user status alfred-cron-litter-monitor.timer
-```
+The host monitor is typically a systemd user timer (e.g.
+`alfred-cron-litter-monitor.timer`). Without it the Dashboard Alfred card stays
+empty.
 
 ## 4. Networking note
 
-`make bridge-up` attaches `cloud_app` (and ideally `cloud_cron`) to `nc-litter-net`.
-If `cloud_app` is recreated, re-run `make bridge-up` unless the cloud compose
-declares the network permanently (see durable networking in the household polish plan).
+`make bridge-up` attaches `cloud_app` **and** `cloud_cron` to `nc-litter-net`,
+then health-checks both. Re-run after recreating either container unless the
+cloud compose declares the network permanently.
 
 ## 5. Troubleshooting
 
 | Symptom | Check |
 |---|---|
 | Blank gauges / “Can’t reach the bridge” | `make bridge-up`; `curl` bridge `/health` from `cloud_app` |
+| History never grows | `cloud_cron` on `nc-litter-net` (`make bridge-net-check`) |
 | Commands fail | Whisker creds, unit online in Whisker app, bridge logs |
-| False Talk “fault” spam (pre-0.3 monitors) | Upgrade `litter-monitor.sh` — only real `decoded_error` / non-zero codes alert |
+| False Talk “fault” spam (pre-0.3 monitors) | Upgrade monitor — only real `decoded_error` / non-zero codes alert |
 | Sleep save fails | Expected — sleep is not writable on LR4 via pylitterbot |

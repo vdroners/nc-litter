@@ -177,7 +177,7 @@ class CycleService
 			$this->appendEventOnChange($cycle, $dto['status'], $now);
 		}
 
-		$name = $this->devices->getDevice($deviceId)?->getName() ?? 'Alfred';
+		$name = $this->devices->getDevice($deviceId)?->getName() ?? 'Litter-Robot';
 
 		$finished = $closed ?? $inferred;
 		if ($finished !== null) {

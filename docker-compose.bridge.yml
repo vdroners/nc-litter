@@ -1,6 +1,9 @@
 services:
   nc_litter_bridge:
+    # Prefer the published image for stranger installs; override with build for
+    # local development. Example: image: ghcr.io/vdroners/nc-litter-bridge:latest
     build: ./bridge
+    image: ghcr.io/vdroners/nc-litter-bridge:latest
     container_name: nc_litter_bridge
     restart: unless-stopped
     env_file:

@@ -78,7 +78,7 @@ class ErrorDecoderService
 				'kind' => 'error',
 				'title' => 'Unknown fault ' . $error,
 				'detail' => 'No catalog entry for this condition.',
-				'action' => "Check Alfred's status ring and the Whisker app, then consult docs/OPERATOR.md.",
+				'action' => "Check the Litter-Robot's status ring and the Whisker app, then consult docs/OPERATOR.md.",
 				'status_code' => $code,
 			];
 		}

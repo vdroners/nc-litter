@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+      - run: npm ci
+      - run: composer install --no-interaction
+      - run: vendor/bin/phpunit
+      - name: Bridge pytest
+        run: |
+          docker run --rm -v "$PWD/bridge:/app" -w /app python:3.12-slim \
+            sh -c "pip install -q -r requirements.txt pytest && pytest -q"
+      - run: npm run test
+      - run: npm run build

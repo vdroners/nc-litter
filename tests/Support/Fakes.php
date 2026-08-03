@@ -554,7 +554,8 @@ class FakeCrypto implements ICrypto
 class FakeConfig implements IConfig
 {
 	/** @param array<string,string> $values keyed `app:key` */
-	public function __construct(public array $values = [])
+	/** @param array<string,mixed> $system */
+	public function __construct(public array $values = [], public array $system = [])
 	{
 	}
 
@@ -571,6 +572,49 @@ class FakeConfig implements IConfig
 	public function deleteAppValue(string $appName, string $key): void
 	{
 		unset($this->values[$appName . ':' . $key]);
+	}
+
+	public function deleteAppValues(string $appName): void
+	{
+		$prefix = $appName . ':';
+		foreach (array_keys($this->values) as $key) {
+			if (str_starts_with($key, $prefix)) {
+				unset($this->values[$key]);
+			}
+		}
+	}
+
+	/** @param mixed $default */
+	public function getSystemValue(string $key, $default = '')
+	{
+		return $this->system[$key] ?? $default;
+	}
+}
+
+/** Minimal ITempManager for DeviceService alert-log root resolution. */
+class FakeTempManager implements \OCP\ITempManager
+{
+	public function __construct(private string $base = '/tmp')
+	{
+	}
+
+	public function getTempBaseDirectory(): string
+	{
+		return $this->base;
+	}
+}
+
+/** Minimal IAppData — getFolder/newFolder are no-ops that succeed. */
+class FakeAppData implements \OCP\Files\IAppData
+{
+	public function getFolder(string $name)
+	{
+		return new \stdClass();
+	}
+
+	public function newFolder(string $name)
+	{
+		return new \stdClass();
 	}
 }
 
@@ -615,7 +659,7 @@ class NullLogger implements LoggerInterface
 }
 
 /** Builds a Device row without touching a database. */
-function makeDevice(int $id = 1, string $name = 'Alfred', string $credsEnc = 'ENC(pw)'): Device
+function makeDevice(int $id = 1, string $name = 'Litter-Robot', string $credsEnc = 'ENC(pw)'): Device
 {
 	$device = new Device();
 	$device->setId($id);

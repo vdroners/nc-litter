@@ -12,6 +12,7 @@ use OCA\NcLitter\Service\CycleService;
 use OCA\NcLitter\Service\DeviceService;
 use OCA\NcLitter\Service\ErrorDecoderService;
 use OCA\NcLitter\Service\MaintenanceHintService;
+use OCA\NcLitter\Tests\Support\FakeAppData;
 use OCA\NcLitter\Tests\Support\FakeBridgeClient;
 use OCA\NcLitter\Tests\Support\FakeCommandAuditMapper;
 use OCA\NcLitter\Tests\Support\FakeConfig;
@@ -21,6 +22,7 @@ use OCA\NcLitter\Tests\Support\FakeCycleMapper;
 use OCA\NcLitter\Tests\Support\FakeDeviceMapper;
 use OCA\NcLitter\Tests\Support\FakeNotifyService;
 use OCA\NcLitter\Tests\Support\FakeTelemetrySampleMapper;
+use OCA\NcLitter\Tests\Support\FakeTempManager;
 use OCA\NcLitter\Tests\Support\NullLogger;
 use PHPUnit\Framework\TestCase;
 
@@ -66,6 +68,8 @@ class CycleServiceTest extends TestCase
 			new MaintenanceHintService(catalogPath('maintenance_thresholds.json')),
 			new AuditService($this->audit),
 			new FakeConfig(),
+			new FakeTempManager(),
+			new FakeAppData(),
 		);
 
 		$this->svc = new CycleService(

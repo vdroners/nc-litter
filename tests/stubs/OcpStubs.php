@@ -11,6 +11,11 @@ interface IConfig
 	public function setAppValue(string $appName, string $key, string $value): void;
 
 	public function deleteAppValue(string $appName, string $key): void;
+
+	public function deleteAppValues(string $appName): void;
+
+	/** @param mixed $default */
+	public function getSystemValue(string $key, $default = '');
 }
 
 interface IGroupManager
@@ -213,4 +218,22 @@ interface LoggerInterface
 	public function debug($message, array $context = []): void;
 
 	public function log($level, $message, array $context = []): void;
+}
+
+namespace OCP;
+
+interface ITempManager
+{
+	public function getTempBaseDirectory(): string;
+}
+
+namespace OCP\Files;
+
+interface IAppData
+{
+	/** @return mixed */
+	public function getFolder(string $name);
+
+	/** @return mixed */
+	public function newFolder(string $name);
 }

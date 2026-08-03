@@ -9,11 +9,13 @@ use OCA\NcLitter\Service\AuditService;
 use OCA\NcLitter\Service\DeviceService;
 use OCA\NcLitter\Service\ErrorDecoderService;
 use OCA\NcLitter\Service\MaintenanceHintService;
+use OCA\NcLitter\Tests\Support\FakeAppData;
 use OCA\NcLitter\Tests\Support\FakeBridgeClient;
 use OCA\NcLitter\Tests\Support\FakeCommandAuditMapper;
 use OCA\NcLitter\Tests\Support\FakeConfig;
 use OCA\NcLitter\Tests\Support\FakeCrypto;
 use OCA\NcLitter\Tests\Support\FakeDeviceMapper;
+use OCA\NcLitter\Tests\Support\FakeTempManager;
 use OCA\NcLitter\Tests\Support\NullLogger;
 use PHPUnit\Framework\TestCase;
 
@@ -41,6 +43,8 @@ class DeviceServiceTest extends TestCase
 			new MaintenanceHintService(catalogPath('maintenance_thresholds.json')),
 			new AuditService($this->auditRows),
 			new FakeConfig(),
+			new FakeTempManager(),
+			new FakeAppData(),
 		);
 	}
 

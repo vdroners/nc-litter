@@ -4,8 +4,14 @@
 	<id>nc_litter</id>
 	<name>NC Litter</name>
 	<summary>Monitor and control your Whisker Litter-Robot 4 from Nextcloud</summary>
-	<description><![CDATA[NC Litter — your litter valet. Start a clean cycle, clear faults with Reset, toggle night-light / panel-lock, set wait time, and watch live waste-drawer and litter levels, cat weight, and cycle history for a Whisker Litter-Robot 4. Connects through a private Python bridge to your Whisker account; credentials are stored encrypted. Includes cycle history, cat-themed achievements, an error decoder, maintenance reminders, and Nextcloud Notifications/Activity. Sleep window and emptying the waste drawer are not remote commands (change sleep in the Whisker app; empty by hand).]]></description>
-	<version>0.3.0</version>
+	<description><![CDATA[NC Litter — your litter valet. Start a clean cycle, clear faults with Reset, toggle night-light / panel-lock, set wait time, and watch live waste-drawer and litter levels, cat weight, and cycle history for a Whisker Litter-Robot 4.
+
+**Requires Whisker cloud.** The app talks to Litter-Robot through a private Python bridge (`nc-litter-bridge`) that holds one Whisker account session. You need a Whisker account and a reachable bridge container on the same Docker network as Nextcloud (see docs/INSTALL.md). Credentials are stored encrypted at rest in Nextcloud (`enc:v1:`); the bridge never exposes a public port.
+
+Includes cycle history, cat-themed achievements, an error decoder, maintenance reminders, and Nextcloud Notifications/Activity. Sleep window and emptying the waste drawer are not remote commands (change sleep in the Whisker app; empty by hand).
+
+**Privacy:** Whisker account email/password are used only to authenticate to Whisker's cloud via the bridge. They are encrypted in the Nextcloud database and are not sent to 19labs or any third party other than Whisker. Optional OpenClaw/Talk alert mirroring reads a confined local log path you configure.]]></description>
+	<version>0.3.1</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="dan@19labs.com">19labs</author>
 	<namespace>NcLitter</namespace>
@@ -13,7 +19,14 @@
 	<website>https://github.com/vdroners/nc-litter</website>
 	<bugs>https://github.com/vdroners/nc-litter/issues</bugs>
 	<repository type="git">https://github.com/vdroners/nc-litter.git</repository>
-	<documentation>https://github.com/vdroners/nc-litter/blob/main/docs/OPERATOR.md</documentation>
+	<documentation>
+		<user>https://github.com/vdroners/nc-litter/blob/main/docs/OPERATOR.md</user>
+		<admin>https://github.com/vdroners/nc-litter/blob/main/docs/INSTALL.md</admin>
+		<developer>https://github.com/vdroners/nc-litter/blob/main/docs/ARCHITECTURE.md</developer>
+	</documentation>
+	<screenshot>https://raw.githubusercontent.com/vdroners/nc-litter/main/docs/screenshots/dashboard.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/vdroners/nc-litter/main/docs/screenshots/history.png</screenshot>
+	<screenshot>https://raw.githubusercontent.com/vdroners/nc-litter/main/docs/screenshots/admin.png</screenshot>
 	<dependencies>
 		<!-- No PHP upper bound, deliberately. A cap is re-validated by `occ upgrade`
 		     on every app version bump; the Nextcloud image moved to PHP 8.5 while the

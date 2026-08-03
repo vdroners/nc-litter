@@ -10,7 +10,9 @@ use OCA\NcLitter\Db\DeviceMapper;
 use OCA\NcLitter\Exception\SecretDecryptException;
 use OCA\NcLitter\Util\ConfinedFileReader;
 use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\Files\IAppData;
 use OCP\IConfig;
+use OCP\ITempManager;
 
 /**
  * Owns one Whisker Litter-Robot 4 as the app sees it: the DB row (identity +
@@ -104,6 +106,8 @@ class DeviceService
 		private MaintenanceHintService $maintenance,
 		private AuditService $audit,
 		private IConfig $config,
+		private ITempManager $tempManager,
+		private IAppData $appData,
 	) {
 	}
 
@@ -217,9 +221,10 @@ class DeviceService
 	/**
 	 * Directories the Alfred alert log is allowed to live in.
 	 *
-	 * The OpenClaw monitor writes into `<configdir>/nc_litter/`, so the roots are
-	 * the app's own directory under the Nextcloud config and data trees — not
-	 * those trees wholesale, which would leave `config/config.php` inside the
+	 * Public OCP only — no `\OC::$configDir`. Roots are the app's own folder
+	 * under (1) `datadirectory`, (2) the IAppData physical home
+	 * (`appdata_{instanceid}`), and (3) the ITempManager temp base. Never the
+	 * parent trees wholesale, which would leave `config.php` inside the
 	 * confinement.
 	 *
 	 * @return list<string>
@@ -227,16 +232,32 @@ class DeviceService
 	private function alertLogRoots(): array
 	{
 		$parents = [];
-		if (class_exists(\OC::class, false) && is_string(\OC::$configDir) && \OC::$configDir !== '') {
-			$parents[] = \OC::$configDir;
-		}
 		$dataDir = (string) $this->config->getSystemValue('datadirectory', '');
 		if ($dataDir !== '') {
 			$parents[] = $dataDir;
+			$instanceId = (string) $this->config->getSystemValue('instanceid', '');
+			if ($instanceId !== '') {
+				// Physical home of IAppData for this instance.
+				$parents[] = rtrim($dataDir, '/') . '/appdata_' . $instanceId;
+			}
+		}
+		$tempBase = $this->tempManager->getTempBaseDirectory();
+		if (is_string($tempBase) && $tempBase !== '') {
+			$parents[] = $tempBase;
+		}
+		// Keep IAppData warm so the appdata root exists when an admin points
+		// alfred_alert_log at it; ignore failures (tests / missing storage).
+		try {
+			$this->appData->getFolder('/');
+		} catch (\Throwable) {
+			try {
+				$this->appData->newFolder('alerts');
+			} catch (\Throwable) {
+			}
 		}
 		$roots = [];
-		foreach ($parents as $parent) {
-			$roots[] = rtrim($parent, '/') . '/' . Application::APP_ID;
+		foreach (array_unique($parents) as $parent) {
+			$roots[] = rtrim((string) $parent, '/') . '/' . Application::APP_ID;
 		}
 		return $roots;
 	}
@@ -288,7 +309,7 @@ class DeviceService
 		if (isset($data['name']) && trim((string) $data['name']) !== '') {
 			$device->setName(trim((string) $data['name']));
 		} elseif ((string) $device->getName() === '') {
-			$device->setName('Alfred');
+			$device->setName('Litter-Robot');
 		}
 		if (isset($data['account_email'])) {
 			$device->setAccountEmail(trim((string) $data['account_email']));
@@ -388,7 +409,7 @@ class DeviceService
 			// (the background job, a test). Say so plainly rather than dressing the
 			// real unit's sensors up as a device that does not exist.
 			$state['device_id'] = $deviceId;
-			$state['name'] = (string) ($state['name'] ?? 'Alfred');
+			$state['name'] = (string) ($state['name'] ?? 'Litter-Robot');
 			$state['has_creds'] = false;
 			$state['device_missing'] = true;
 		}
@@ -422,7 +443,7 @@ class DeviceService
 			'poll_error' => $state['poll_error'] ?? null,
 			'last_command' => $this->audit->latest($deviceId)?->jsonSerialize() ?? new \stdClass(),
 			'recovery' => [
-				'Confirm Alfred has power and its status ring is lit.',
+				'Confirm the Litter-Robot has power and its status ring is lit.',
 				'Check the unit is on the house Wi-Fi (Whisker is cloud-polled, not local).',
 				'Re-enter the Whisker account password in Admin settings, then Retry connect.',
 				'Whisker outage? The mobile app will be equally blind — wait it out.',

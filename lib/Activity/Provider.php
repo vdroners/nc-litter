@@ -31,7 +31,7 @@ class Provider implements IProvider
 		}
 		$l = $this->l10nFactory->get(Application::APP_ID, $language);
 		$params = $event->getSubjectParameters();
-		$device = (string) ($params['device'] ?? 'Alfred');
+		$device = (string) ($params['device'] ?? 'Litter-Robot');
 
 		$event->setIcon(
 			$this->url->getAbsoluteURL($this->url->imagePath(Application::APP_ID, 'app.svg')),

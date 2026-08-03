@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  appstore:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          composer install --no-interaction
+
+      - name: Resolve version from info.xml
+        id: ver
+        run: |
+          VERSION=$(grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' appinfo/info.xml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          TAG="${{ github.event.release.tag_name }}"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Release tag '${TAG}' must equal info.xml version '${VERSION}' (no 'v' prefix)."
+            exit 1
+          fi
+
+      - name: Build App Store tarball
+        run: make appstore
+
+      - name: Write signing material
+        env:
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+          APP_PUBLIC_CRT: ${{ secrets.APP_PUBLIC_CRT }}
+        run: |
+          printf '%s' "$APP_PRIVATE_KEY" > /tmp/app.key
+          printf '%s' "$APP_PUBLIC_CRT" > /tmp/app.crt
+          echo "APP_PRIVATE_KEY=/tmp/app.key" >> "$GITHUB_ENV"
+          echo "APP_PUBLIC_CRT=/tmp/app.crt" >> "$GITHUB_ENV"
+
+      - name: Sign app (Nextcloud occ in container)
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          STAGING="/tmp/nc_litter-${VERSION}"
+          docker run --rm \
+            -v "${STAGING}:/var/www/html/custom_apps/nc_litter" \
+            -v /tmp/app.key:/tmp/app.key:ro \
+            -v /tmp/app.crt:/tmp/app.crt:ro \
+            -e APP_PRIVATE_KEY=/tmp/app.key \
+            -e APP_PUBLIC_CRT=/tmp/app.crt \
+            nextcloud:stable \
+            bash -c 'cp /var/www/html/custom_apps/nc_litter/scripts/file_from_env.php /tmp/file_from_env.php && php occ integrity:sign-app --privateKey="file:///tmp/file_from_env.php" --certificate="file:///tmp/file_from_env.php" nc_litter'
+          tar -czf "/tmp/nc_litter-${VERSION}.tar.gz" -C /tmp "nc_litter-${VERSION}"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/nc_litter-${{ steps.ver.outputs.version }}.tar.gz
+
+      - name: Push to Nextcloud App Store
+        uses: R0Wi/nextcloud-appstore-push-action@v1
+        with:
+          app_name: nc_litter
+          appstore_token: ${{ secrets.APPSTORE_TOKEN }}
+          download_url: ${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.ver.outputs.version }}/nc_litter-${{ steps.ver.outputs.version }}.tar.gz

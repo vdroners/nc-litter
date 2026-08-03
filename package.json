@@ -1,6 +1,6 @@
 {
   "name": "nc_litter",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "NC Litter — Nextcloud app for the Whisker Litter-Robot 4",
   "license": "AGPL-3.0-or-later",

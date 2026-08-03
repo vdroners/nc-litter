@@ -6,9 +6,9 @@ BRIDGE_COMPOSE := docker compose -f "$(ROOT)docker-compose.bridge.yml"
 BRIDGE_NET := nc-litter-net
 DATE ?= $(shell date +%F)
 
-.PHONY: build test deploy ship bridge-up bridge-down bridge-test \
+.PHONY: build test deploy ship bridge-up bridge-down bridge-test bridge-net-check \
 	bump-patch bump-minor gate-preflight gate-live gate-gui \
-	phpunit run-phpunit
+	phpunit run-phpunit appstore appstore-sign
 
 build:
 	cd "$(ROOT)" && npm run build
@@ -31,6 +31,7 @@ _bump:
 		sed -i "0,/\"version\": \"$$cur\"/s##\"version\": \"$$next\"#" "$(ROOT)package-lock.json"; \
 	fi; \
 	sed -i "s#\*\*Version $$cur\*\*#**Version $$next**#" "$(ROOT)README.md"; \
+	sed -i "s#version-$$cur-#version-$$next-#" "$(ROOT)README.md"; \
 	if ! grep -q "^## \[$$next\]" "$(ROOT)CHANGELOG.md"; then \
 		awk -v v="$$next" -v d="$(DATE)" 'BEGIN{done=0} /^## \[/ && !done {print "## [" v "] - " d "\n"; done=1} {print}' \
 			"$(ROOT)CHANGELOG.md" > "$(ROOT)CHANGELOG.md.tmp" && mv "$(ROOT)CHANGELOG.md.tmp" "$(ROOT)CHANGELOG.md"; \
@@ -39,11 +40,42 @@ _bump:
 
 # Prefer `.env` (LITTER_MOCK=0 for a real robot). Do NOT export LITTER_MOCK=1
 # here — a shell override wins over `.env` and silently puts the bridge into mock.
+#
+# CRON_CONTAINER is not optional. Background jobs (TelemetrySampleJob) run in the
+# cron container, not cloud_app. Without attaching cloud_cron to nc-litter-net,
+# cron cannot resolve nc_litter_bridge and cycle history / telemetry never write.
+# `docker network connect` does not survive a container recreate — re-run
+# `make bridge-up` after recreating the cloud stack.
+CRON_CONTAINER ?= cloud_cron
+
 bridge-up:
 	$(BRIDGE_COMPOSE) up -d --build
-	@docker network connect $(BRIDGE_NET) $(CONTAINER) 2>/dev/null \
-		|| echo "cloud_app already on $(BRIDGE_NET) (or not running)"
+	@for c in $(CONTAINER) $(CRON_CONTAINER); do \
+		if docker network connect $(BRIDGE_NET) $$c 2>/dev/null; then \
+			echo "attached $$c to $(BRIDGE_NET)"; \
+		else \
+			echo "$$c already on $(BRIDGE_NET) (or not running)"; \
+		fi; \
+	done
+	@$(MAKE) --no-print-directory bridge-net-check
 	@echo "nc_litter_bridge up on $(BRIDGE_NET) (LITTER_MOCK from .env / compose default)"
+
+# Fails loudly if cron cannot reach the bridge — the condition that silently
+# disables TelemetrySampleJob / cycle history.
+bridge-net-check:
+	@ok=1; \
+	for c in $(CONTAINER) $(CRON_CONTAINER); do \
+		if ! docker ps --format '{{.Names}}' | grep -qx "$$c"; then \
+			echo "  skip $$c (not running)"; continue; \
+		fi; \
+		code=$$(docker exec $$c sh -c 'curl -s -m 5 -o /dev/null -w "%{http_code}" http://nc_litter_bridge:8080/health' 2>/dev/null); \
+		if [ "$$code" = "200" ]; then \
+			echo "  OK   $$c can reach the bridge"; \
+		else \
+			echo "  FAIL $$c cannot reach nc_litter_bridge (HTTP $$code)"; ok=0; \
+		fi; \
+	done; \
+	test $$ok -eq 1 || (echo "bridge unreachable from a required container — telemetry will not record" && exit 1)
 
 bridge-down:
 	$(BRIDGE_COMPOSE) down
@@ -89,6 +121,7 @@ deploy: build
 		echo "RESTART=1 -> restarting $(CONTAINER)"; \
 		docker restart $(CONTAINER) >/dev/null && sleep 8; \
 		docker network connect $(BRIDGE_NET) $(CONTAINER) 2>/dev/null || true; \
+		docker network connect $(BRIDGE_NET) $(CRON_CONTAINER) 2>/dev/null || true; \
 	fi
 	@echo "Deployed $(APP_ID) to $(CONTAINER):$(REMOTE)"
 
@@ -109,3 +142,36 @@ gate-live:
 
 gate-gui:
 	bash "$(ROOT)tools/litter-gui-gates.sh"
+
+VERSION := $(shell grep -oE '<version>[0-9]+\.[0-9]+\.[0-9]+</version>' "$(ROOT)appinfo/info.xml" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+STAGING := /tmp/$(APP_ID)-$(VERSION)
+TARBALL := /tmp/$(APP_ID)-$(VERSION).tar.gz
+
+# Self-contained App Store tarball (built assets + composer vendor; bridge excluded).
+appstore: build
+	rm -rf "$(STAGING)"
+	mkdir -p "$(STAGING)"
+	rsync -a --delete \
+		--exclude node_modules --exclude tests --exclude test --exclude .git \
+		--exclude .github --exclude bridge --exclude src --exclude .env \
+		--exclude '.env.*' --exclude .phpunit.cache --exclude .phpunit.result.cache \
+		--exclude .vitest-gate-stamp --exclude '*.map' \
+		"$(ROOT)" "$(STAGING)/"
+	cd "$(STAGING)" && composer install --no-dev --no-interaction --optimize-autoloader
+	rm -rf "$(STAGING)/node_modules" "$(STAGING)/bridge" "$(STAGING)/src" "$(STAGING)/tests"
+	tar -czf "$(TARBALL)" -C /tmp "$(APP_ID)-$(VERSION)"
+	@echo "Release tarball: $(TARBALL)"
+
+appstore-sign: appstore
+	@test -n "$(NC_OCC)" || (echo "Set NC_OCC to your occ binary path" && exit 1)
+	@test -n "$$APP_PRIVATE_KEY" || (echo "Set APP_PRIVATE_KEY to private key file path" && exit 1)
+	@test -n "$$APP_PUBLIC_CRT" || (echo "Set APP_PUBLIC_CRT to certificate file path" && exit 1)
+	cp "$(ROOT)scripts/file_from_env.php" "$(STAGING)/file_from_env.php"
+	php "$(NC_OCC)" integrity:sign-app \
+		--privateKey="file://$(STAGING)/file_from_env.php" \
+		--certificate="file://$(STAGING)/file_from_env.php" \
+		$(APP_ID)
+	APP_PRIVATE_KEY="$$APP_PRIVATE_KEY" APP_PUBLIC_CRT="$$APP_PUBLIC_CRT" \
+	php "$(NC_OCC)" integrity:check-app $(APP_ID)
+	tar -czf "$(TARBALL)" -C /tmp "$(APP_ID)-$(VERSION)"
+	@echo "Signed tarball: $(TARBALL)"

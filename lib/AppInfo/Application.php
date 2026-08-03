@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace OCA\NcLitter\AppInfo;
 
+use OCA\NcLitter\Listener\UninstallCleanupListener;
 use OCA\NcLitter\Middleware\ForbiddenMiddleware;
 use OCA\NcLitter\Notification\Notifier;
+use OCP\App\Events\AppUninstallEvent;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -27,6 +29,10 @@ class Application extends App implements IBootstrap
 	{
 		$context->registerNotifierService(Notifier::class);
 		$context->registerMiddleware(ForbiddenMiddleware::class);
+		$context->registerEventListener(
+			AppUninstallEvent::class,
+			UninstallCleanupListener::class
+		);
 	}
 
 	/**

@@ -10,6 +10,27 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.3.1] - 2026-08-03
+
+App Store readiness — uninstall cleanup, public OCP paths, packaging, stranger install.
+
+### Added
+
+- `UninstallCleanupListener` drops `nc_litter_*` tables and appconfig on uninstall
+- Makefile `appstore` / `appstore-sign` (excludes bridge, tests, src, `.env*`, `.github`)
+- GitHub workflows: `release.yml`, `docker-bridge.yml` (GHCR `nc-litter-bridge`), `ci.yml`
+- `docs/INSTALL.md` — stranger install via GHCR + Docker network attach (incl. `cloud_cron`)
+- Nested `documentation` (user / admin / developer) + screenshot URL placeholders
+- `scripts/file_from_env.php` for CI app signing
+
+### Changed
+
+- Alert-log confinement uses `IConfig` / `ITempManager` / `IAppData` (no `\OC::$configDir`)
+- Default device display name fallbacks are `Litter-Robot` (not Alfred)
+- `bridge-up` / `bridge-net-check` attach and health-check `cloud_cron` on `nc-litter-net`
+- Bridge Dockerfile no longer copies `test/` into the runtime image
+- Privacy note in `info.xml`: Whisker cloud dependency + encrypted credential handling
+
 ## [0.3.0] - 2026-08-03
 
 Alfred / household-ops honesty pass — Talk monitors, docs, and UI catch up to

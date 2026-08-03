@@ -1,6 +1,6 @@
 # NC Litter
 
-![version](https://img.shields.io/badge/version-0.3.0-D8A45E)
+![version](https://img.shields.io/badge/version-0.3.1-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
 [![GitHub](https://img.shields.io/badge/github-vdroners%2Fnc--litter-181717?logo=github)](https://github.com/vdroners/nc-litter)
 
@@ -123,6 +123,7 @@ The bridge contract tests are the important ones: they bind to the *installed*
 ## Docs
 
 - Operator guide: [`docs/OPERATOR.md`](docs/OPERATOR.md)
+- Install (stranger / GHCR bridge): [`docs/INSTALL.md`](docs/INSTALL.md)
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Alfred ops plan (v0.3): [`docs/plans/nc-litter-v0.3-alfred-ops.md`](docs/plans/nc-litter-v0.3-alfred-ops.md)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)

@@ -6,9 +6,8 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App code.
+# App code only (tests stay in the repo; they are not part of the runtime image).
 COPY app.py litter_manager.py normalizer.py ./
-COPY test ./test
 
 ENV PORT=8080
 EXPOSE 8080
