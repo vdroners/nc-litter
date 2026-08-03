@@ -8,7 +8,7 @@
 4. Primarily AI-authored commits end with this trailer as the **last** line:
 
 ```
-Co-developed-by: Claude (model: claude-opus-4.8, context: 200k)
+Co-developed-by: Claude (model: claude-opus-4.7, context: 200k)
 ```
 
 Do not include a Cursor `Co-authored-by` trailer. Use a sanitized env for

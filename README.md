@@ -2,14 +2,17 @@
 
 ![version](https://img.shields.io/badge/version-0.3.0-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
+[![GitHub](https://img.shields.io/badge/github-vdroners%2Fnc--litter-181717?logo=github)](https://github.com/vdroners/nc-litter)
 
 Nextcloud app to monitor and control a **Whisker Litter-Robot 4** through the
 Whisker cloud. Remote access is via your Nextcloud URL; the private Python
 bridge never binds a public port.
 
 The UI brands itself around the **unit's Whisker display name** (e.g. *Poop
-Roller* on this install) with a charcoal / tabby-amber / cream look, live drawer
-and litter ring gauges, and an animated globe on the Dashboard during a cycle.
+Roller*) with a charcoal / tabby-amber / cream look, live drawer and litter ring
+gauges, and an animated globe on the Dashboard during a cycle.
+
+Tested on a **Litter-Robot 4** against **Nextcloud 34 / PHP 8.5**.
 
 ## Features
 
@@ -119,9 +122,12 @@ The bridge contract tests are the important ones: they bind to the *installed*
 
 ## Docs
 
-- Plan + pass/fail gates: [`docs/plans/nc-litter-v0.1-plan.md`](docs/plans/nc-litter-v0.1-plan.md)
+- Operator guide: [`docs/OPERATOR.md`](docs/OPERATOR.md)
+- Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- Alfred ops plan (v0.3): [`docs/plans/nc-litter-v0.3-alfred-ops.md`](docs/plans/nc-litter-v0.3-alfred-ops.md)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
 ## License
 
-AGPL-3.0-or-later. Bridge dependency pylitterbot is MIT.
+AGPL-3.0-or-later. Bridge dependency [pylitterbot](https://github.com/natekspencer/pylitterbot) is MIT.
