@@ -157,7 +157,13 @@ appstore: build
 		--exclude '.env.*' --exclude .phpunit.cache --exclude .phpunit.result.cache \
 		--exclude .vitest-gate-stamp --exclude '*.map' \
 		"$(ROOT)" "$(STAGING)/"
-	cd "$(STAGING)" && composer install --no-dev --no-interaction --optimize-autoloader
+	@if command -v composer >/dev/null 2>&1; then \
+		cd "$(STAGING)" && composer install --no-dev --no-interaction --optimize-autoloader; \
+	else \
+		echo "composer not on PATH — running in the composer:2 container"; \
+		docker run --rm -v "$(STAGING):/app" -w /app composer:2 \
+			composer install --no-dev --no-interaction --optimize-autoloader; \
+	fi
 	rm -rf "$(STAGING)/node_modules" "$(STAGING)/bridge" "$(STAGING)/src" "$(STAGING)/tests"
 	tar -czf "$(TARBALL)" -C /tmp "$(APP_ID)-$(VERSION)"
 	@echo "Release tarball: $(TARBALL)"
