@@ -28,7 +28,7 @@ class CycleMapper extends QBMapper
 	}
 
 	/** @return Cycle[] */
-	public function findByDevice(int $deviceId, int $limit = 50, int $offset = 0): array
+	public function findByDevice(int $deviceId, int $limit = 500, int $offset = 0): array
 	{
 		$qb = $this->db->getQueryBuilder();
 		$qb->select('*')

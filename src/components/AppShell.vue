@@ -21,6 +21,24 @@
 		</nav>
 
 		<main class="nc-litter-main">
+			<!-- Nextcloud cannot reach the bridge at all. Blank gauges look like
+			     "no data" rather than "lost link" without this banner. -->
+			<NcNoteCard
+				v-if="bridgeUnreachable"
+				type="error"
+				heading="Can't reach the bridge"
+				data-testid="bridge-unreachable">
+				<p>
+					Nextcloud can't reach the {{ deviceName }} bridge, so the readings below
+					are blank rather than out of date. The Litter-Robot itself may be fine —
+					this is the link between Nextcloud and the bridge service.
+				</p>
+				<p class="nc-litter-muted">
+					Usually a restarted container that lost its network attachment. Run
+					<code>make bridge-up</code> in the app directory, or open Connection
+					health for details.
+				</p>
+			</NcNoteCard>
 			<!--
 				A rejected COMMAND is sticky: it stays until it is dismissed. It used to
 				share one field with read errors, and `loadState()` clears those on every
@@ -60,7 +78,7 @@ import { NcButton, NcNoteCard } from '@nextcloud/vue'
 
 import ConnectionHealthDrawer from './ConnectionHealthDrawer.vue'
 import StatusStrip from './StatusStrip.vue'
-import { statusKey } from '../utils/format.js'
+import { isBridgeUnreachable, statusKey } from '../utils/format.js'
 
 // No Location tab: the LR4 reports no position and no floor map, so there is nothing
 // honest to put on one.
@@ -134,6 +152,16 @@ export default {
 	},
 
 	computed: {
+		/** True when Nextcloud cannot reach the bridge at all. */
+		bridgeUnreachable() {
+			return isBridgeUnreachable(this.state)
+		},
+
+		/** Unit display name for banner copy. */
+		deviceName() {
+			return (this.state && this.state.name) || 'Litter-Robot'
+		},
+
 		/** Names the command that failed, so the banner is not just "went wrong". */
 		actionErrorHeading() {
 			const action = (this.actionError && this.actionError.action) || ''

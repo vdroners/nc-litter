@@ -66,13 +66,16 @@ export async function postAction(name, deviceId = DEFAULT_DEVICE_ID, params = {}
  * @param {object} [options]
  * @param {number} [options.limit]
  * @param {number} [options.offset]
- * @returns {Promise<object[]>} cycle history rows, newest first
+ * @returns {Promise<{items: object[], total: number}>} cycle history page, newest first
  */
-export async function getCycles(deviceId = DEFAULT_DEVICE_ID, { limit = 50, offset = 0 } = {}) {
+export async function getCycles(deviceId = DEFAULT_DEVICE_ID, { limit = 500, offset = 0 } = {}) {
 	const { data } = await axios.get(`${base()}/api/cycles`, {
 		params: { device_id: deviceId, limit, offset },
 	})
-	return data.items || []
+	return {
+		items: data.items || [],
+		total: Number(data.total ?? (data.items || []).length) || 0,
+	}
 }
 
 /**

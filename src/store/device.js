@@ -76,6 +76,8 @@ export const useDeviceStore = defineStore('device', {
 		bootstrap: {},
 		/** @type {object[]} recorded cycle rows, newest first */
 		cycles: [],
+		/** Total cycles on the device (may exceed `cycles.length` when truncated). */
+		cyclesTotal: 0,
 		/** @type {object|null} cycle detail (events + telemetry) */
 		selectedCycle: null,
 		/** @type {object|null} LR4 settings block (night_light, panel_lock, wait_time, sleep) */
@@ -452,7 +454,9 @@ export const useDeviceStore = defineStore('device', {
 		/** @returns {Promise<object[]>} */
 		async loadCycles() {
 			try {
-				this.cycles = await api.getCycles(this.deviceId)
+				const page = await api.getCycles(this.deviceId)
+				this.cycles = page.items || []
+				this.cyclesTotal = Number(page.total ?? this.cycles.length) || 0
 			} catch (err) {
 				this.error = errorMessage(err, 'Could not load the cycle history')
 			}

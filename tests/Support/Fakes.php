@@ -66,7 +66,7 @@ class FakeCycleMapper extends CycleMapper
 		return $this->rows[$id];
 	}
 
-	public function findByDevice(int $deviceId, int $limit = 50, int $offset = 0): array
+	public function findByDevice(int $deviceId, int $limit = 500, int $offset = 0): array
 	{
 		$rows = array_values(array_filter(
 			$this->rows,

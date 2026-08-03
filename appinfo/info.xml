@@ -4,8 +4,8 @@
 	<id>nc_litter</id>
 	<name>NC Litter</name>
 	<summary>Monitor and control your Whisker Litter-Robot 4 from Nextcloud</summary>
-	<description><![CDATA[NC Litter — your litter valet. Start a clean cycle, empty the waste drawer, toggle sleep / night-light / panel-lock, and watch live waste-drawer and litter levels, cat weight, and cycle history for a Whisker Litter-Robot 4. Connects through a private bridge to your Whisker account; credentials are stored encrypted. Includes cycle history, cat-themed achievements, an error decoder, maintenance reminders, and Nextcloud Notifications/Activity.]]></description>
-	<version>0.2.0</version>
+	<description><![CDATA[NC Litter — your litter valet. Start a clean cycle, clear faults with Reset, toggle night-light / panel-lock, set wait time, and watch live waste-drawer and litter levels, cat weight, and cycle history for a Whisker Litter-Robot 4. Connects through a private Python bridge to your Whisker account; credentials are stored encrypted. Includes cycle history, cat-themed achievements, an error decoder, maintenance reminders, and Nextcloud Notifications/Activity. Sleep window and emptying the waste drawer are not remote commands (change sleep in the Whisker app; empty by hand).]]></description>
+	<version>0.3.0</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="dan@19labs.com">19labs</author>
 	<namespace>NcLitter</namespace>

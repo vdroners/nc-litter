@@ -78,7 +78,7 @@ class CycleService
 	/**
 	 * @return array{items:list<array<string,mixed>>,total:int,device_id:int}
 	 */
-	public function listCycles(int $deviceId = 0, int $limit = 50, int $offset = 0): array
+	public function listCycles(int $deviceId = 0, int $limit = 500, int $offset = 0): array
 	{
 		if ($deviceId <= 0) {
 			$primary = $this->devices->getPrimaryDevice();

@@ -10,6 +10,28 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.3.0] - 2026-08-03
+
+Alfred / household-ops honesty pass — Talk monitors, docs, and UI catch up to
+what the LR4 and Whisker bridge can actually do.
+
+### Added
+
+- Bridge-unreachable banner when Nextcloud cannot reach `nc_litter_bridge`
+- Admin field for Alfred `alfred_alert_log` path (confined under `nc_litter/`)
+- History “Showing N of total” when the cycle page is truncated
+- Plan: `docs/plans/nc-litter-v0.3-alfred-ops.md`
+- `ConfinedFileReader` for Alfred alert JSONL reads
+
+### Changed
+
+- Cycle history default page size **50 → 500** (API + UI)
+- Settings save copy: confirmed on unit vs waiting for Whisker echo (~30s)
+- `docs/OPERATOR.md` / `docs/ARCHITECTURE.md` rewritten for Whisker cloud + Python bridge
+- `appinfo/info.xml` description no longer claims empty-drawer or sleep writes
+- Notifier fallback device name is `Litter-Robot` (not Alfred)
+- Preflight notes `alfred-cron-litter-monitor.timer` for Talk alerts
+
 ## [0.2.0] - 2026-07-30
 
 An adversarial audit of the whole app — backend, bridge and GUI — against the

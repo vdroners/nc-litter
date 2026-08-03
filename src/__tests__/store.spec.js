@@ -478,10 +478,13 @@ describe('device store', () => {
 	it('loads cycle history and detail', async () => {
 		const todayNoon = new Date()
 		todayNoon.setHours(12, 0, 0, 0)
-		api.getCycles.mockResolvedValue([
-			{ id: 2, started_at: Math.floor(todayNoon.getTime() / 1000), result: 'complete' },
-			{ id: 1, started_at: Math.floor(todayNoon.getTime() / 1000) - 5 * 86400, result: 'complete' },
-		])
+		api.getCycles.mockResolvedValue({
+			items: [
+				{ id: 2, started_at: Math.floor(todayNoon.getTime() / 1000), result: 'complete' },
+				{ id: 1, started_at: Math.floor(todayNoon.getTime() / 1000) - 5 * 86400, result: 'complete' },
+			],
+			total: 2,
+		})
 		api.getCycle.mockResolvedValue({ id: 2, events: [{ ts: 1, status: 'cleaning' }] })
 
 		const store = useDeviceStore()
@@ -496,7 +499,7 @@ describe('device store', () => {
 	})
 
 	it('handles the real cycle log shape', async () => {
-		api.getCycles.mockResolvedValue(cycleRows())
+		api.getCycles.mockResolvedValue({ items: cycleRows(), total: 8 })
 		const store = useDeviceStore()
 		await store.init({}, { live: false })
 		await store.loadCycles()

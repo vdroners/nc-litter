@@ -261,6 +261,21 @@ describe('AppShell', () => {
 		const wrapper = mountWith(AppShell, { propsData: { state: stateDto() } })
 		expect(wrapper.find('[data-testid="action-error"]').exists()).toBe(false)
 		expect(wrapper.find('[data-testid="read-error"]').exists()).toBe(false)
+		expect(wrapper.find('[data-testid="bridge-unreachable"]').exists()).toBe(false)
+	})
+
+	it('shows the bridge-unreachable banner when bridge_ok is false', () => {
+		const wrapper = mountWith(AppShell, {
+			propsData: {
+				state: stateDto({
+					name: 'Poop Roller',
+					connection_health: { bridge_ok: false },
+				}),
+			},
+		})
+		const banner = wrapper.find('[data-testid="bridge-unreachable"]')
+		expect(banner.exists()).toBe(true)
+		expect(banner.text()).toContain('Poop Roller')
 	})
 })
 
@@ -341,7 +356,7 @@ describe('SettingsView', () => {
 		await wrapper.vm.savePrefs()
 		await wrapper.vm.$nextTick()
 
-		expect(wrapper.text()).toMatch(/Preferences written to/)
+		expect(wrapper.text()).toMatch(/Preferences confirmed on/)
 	})
 
 	it('exposes the power control the unit says it supports, behind a confirm', async () => {

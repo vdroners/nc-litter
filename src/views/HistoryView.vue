@@ -31,6 +31,12 @@
 
 		<div class="nc-litter-panel" data-testid="cycle-list">
 			<h3>Cycles</h3>
+			<p
+				v-if="cycles.length && cyclesTotal > cycles.length"
+				class="nc-litter-muted"
+				data-testid="cycles-truncated">
+				Showing {{ cycles.length }} of {{ cyclesTotal }}
+			</p>
 
 			<div v-if="!cycles.length" class="nc-litter-empty">
 				<span class="nc-litter-empty__icon" aria-hidden="true">🐈</span>
@@ -122,6 +128,9 @@ export default {
 		},
 		cycles() {
 			return this.store.cycles
+		},
+		cyclesTotal() {
+			return this.store.cyclesTotal || this.cycles.length
 		},
 		deviceName() {
 			return this.store.deviceName

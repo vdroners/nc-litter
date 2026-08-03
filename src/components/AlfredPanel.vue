@@ -38,6 +38,11 @@ const COMMANDS = [
 	'@alfred litter status',
 	'@alfred litter clean',
 	'@alfred litter reset',
+	'@alfred litter light-on',
+	'@alfred litter light-off',
+	'@alfred litter lock',
+	'@alfred litter unlock',
+	'@alfred litter help',
 ]
 
 /**

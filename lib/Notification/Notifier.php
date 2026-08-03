@@ -38,7 +38,7 @@ class Notifier implements INotifier
 
 		$l = $this->l10nFactory->get(Application::APP_ID, $languageCode);
 		$params = $notification->getSubjectParameters();
-		$device = (string) ($params['device'] ?? 'Alfred');
+		$device = (string) ($params['device'] ?? 'Litter-Robot');
 
 		switch ($notification->getSubject()) {
 			case ActivityProvider::SUBJECT_CYCLE_COMPLETE:

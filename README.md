@@ -1,6 +1,6 @@
 # NC Litter
 
-![version](https://img.shields.io/badge/version-0.2.0-D8A45E)
+![version](https://img.shields.io/badge/version-0.3.0-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
 
 Nextcloud app to monitor and control a **Whisker Litter-Robot 4** through the
@@ -91,6 +91,7 @@ Operators must be in the `litter-operators` group.
 | Item | Value |
 |---|---|
 | Bridge URL (from `cloud_app`) | `http://nc_litter_bridge:8080` |
+| **App + cron on bridge net** | `cloud_app` and `cloud_cron` attach to `nc-litter-net` via `/media/4TB/cloud/docker-compose.yml` (external network). `make bridge-up` still reattaches if needed. |
 | Mock mode | `LITTER_MOCK=1` (compose default) vs `LITTER_MOCK=0` for a real unit |
 | Whisker creds | `WHISKER_EMAIL` / `WHISKER_PASSWORD` in `.env` (never committed) |
 | Device selection | `LITTER_DEVICE_ID` (id or serial; blank = first on the account) |

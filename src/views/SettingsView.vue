@@ -374,7 +374,14 @@ export default {
 				errors[key] = result.errors[key] || 'not applied by the unit'
 			}
 			if (result.ok) {
-				this.report(`${what} written to ${this.deviceName}.`, 'success')
+				this.report(`${what} confirmed on ${this.deviceName}.`, 'success')
+				return
+			}
+			if (result.rejected.length === 0) {
+				this.report(
+					`Sent to ${this.deviceName}. Waiting for Whisker echo (~30s) — then Reload from unit.`,
+					'warning',
+				)
 				return
 			}
 			this.report(

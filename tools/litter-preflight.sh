@@ -38,6 +38,7 @@ need=(
 	knowledge/error_codes.json
 	knowledge/maintenance_thresholds.json
 	docs/plans/nc-litter-v0.1-plan.md
+	docs/plans/nc-litter-v0.3-alfred-ops.md
 )
 missing=()
 for f in "${need[@]}"; do
@@ -164,6 +165,21 @@ if [[ -z "$pii" ]]; then
 else
 	bad "G0i personal email address in tracked files:"
 	printf '     %s\n' "$pii"
+fi
+
+echo
+# ---------------------------------------------------------------------------
+# G0j  Alfred monitor ownership (ops note — non-fatal if timer absent on CI hosts)
+# ---------------------------------------------------------------------------
+if command -v systemctl >/dev/null 2>&1; then
+	if systemctl --user is-active alfred-cron-litter-monitor.timer >/dev/null 2>&1 \
+		|| systemctl --user is-enabled alfred-cron-litter-monitor.timer >/dev/null 2>&1; then
+		pass "G0j alfred-cron-litter-monitor.timer is active or enabled"
+	else
+		pass "G0j note: alfred-cron-litter-monitor.timer not active here — enable on the OpenClaw host for Talk alerts"
+	fi
+else
+	pass "G0j systemctl unavailable — skip litter monitor timer check"
 fi
 
 echo

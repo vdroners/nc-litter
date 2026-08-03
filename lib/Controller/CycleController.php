@@ -50,7 +50,7 @@ class CycleController extends Controller
 		if (($missing = $this->notFound($deviceId)) !== null) {
 			return $missing;
 		}
-		$limit = (int) $this->request->getParam('limit', 50);
+		$limit = (int) $this->request->getParam('limit', 500);
 		$offset = (int) $this->request->getParam('offset', 0);
 		return new JSONResponse($this->cycles->listCycles($deviceId, $limit, $offset));
 	}

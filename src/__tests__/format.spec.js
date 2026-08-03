@@ -21,6 +21,7 @@ import {
 	statusTone,
 	timestampLabel,
 	waitTimeLabel,
+	isBridgeUnreachable,
 } from '@/utils/format.js'
 
 // The status strip, hero and stage are thin templates over these helpers, so
@@ -207,5 +208,15 @@ describe('shared numeric + option helpers', () => {
 		// The unit reports [3, 7, 15, 25, 30]; 25 used to be missing here, so a unit
 		// set to 25 minutes in the Whisker app had no matching option at all.
 		expect(WAIT_TIME_OPTIONS).toEqual([3, 7, 15, 25, 30])
+	})
+})
+
+describe('isBridgeUnreachable', () => {
+	it('is true only when bridge_ok is explicitly false', () => {
+		expect(isBridgeUnreachable({ connection_health: { bridge_ok: false } })).toBe(true)
+		expect(isBridgeUnreachable({ connection_health: { bridge_ok: true } })).toBe(false)
+		expect(isBridgeUnreachable(null)).toBe(false)
+		expect(isBridgeUnreachable({})).toBe(false)
+		expect(isBridgeUnreachable({ connection_health: {} })).toBe(false)
 	})
 })

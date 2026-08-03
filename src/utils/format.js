@@ -373,3 +373,17 @@ export function sparklinePoints(samples, width = 100, height = 28) {
 		})
 		.join(' ')
 }
+
+/**
+ * True when Nextcloud cannot reach the litter bridge at all.
+ *
+ * Keyed off `bridge_ok === false` only — missing gauges on a healthy idle unit
+ * must not show this banner.
+ *
+ * @param {object|null} state enriched device state
+ * @returns {boolean}
+ */
+export function isBridgeUnreachable(state) {
+	const health = (state && state.connection_health) || {}
+	return health.bridge_ok === false
+}

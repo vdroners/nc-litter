@@ -90,6 +90,20 @@
 				Talk room token
 				<input v-model="alfred.talk_room" type="text" placeholder="9x4f25n3 (family room)">
 			</label>
+			<label>
+				Alert log path
+				<input
+					v-model="alfred.alert_log"
+					type="text"
+					placeholder="/var/www/html/config/nc_litter/litter-alerts.jsonl"
+					data-testid="alfred-alert-log">
+			</label>
+			<p class="nc-litter-muted">
+				Must live under the Nextcloud config or data <code>nc_litter/</code> tree
+				(confined read). Host monitor:
+				<code>alfred-cron-litter-monitor.timer</code> must be active or the Alfred
+				card stays empty.
+			</p>
 			<div class="nc-litter-actions">
 				<NcButton type="primary" :disabled="!!busy" @click="save">
 					{{ busy === 'save' ? 'Saving…' : 'Save Alfred settings' }}
@@ -150,6 +164,7 @@ export default {
 			alfred: {
 				enabled: Boolean((this.config.alfred || {}).enabled),
 				talk_room: (this.config.alfred || {}).talk_room || '',
+				alert_log: (this.config.alfred || {}).alert_log || '',
 			},
 			cfg: {
 				// 'Alfred' is the sibling vacuum's name — an unnamed litter unit is its
@@ -205,6 +220,7 @@ export default {
 				this.alfred = {
 					enabled: Boolean(settings.alfred.enabled),
 					talk_room: settings.alfred.talk_room || '',
+					alert_log: settings.alfred.alert_log || '',
 				}
 			}
 		},
@@ -250,6 +266,7 @@ export default {
 					alfred: {
 						enabled: this.alfred.enabled,
 						talk_room: this.alfred.talk_room,
+						alert_log: this.alfred.alert_log,
 					},
 				})
 				this.applyBootstrap(saved.settings || saved)

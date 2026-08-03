@@ -8,6 +8,7 @@ use OCA\NcLitter\AppInfo\Application;
 use OCA\NcLitter\Db\Device;
 use OCA\NcLitter\Db\DeviceMapper;
 use OCA\NcLitter\Exception\SecretDecryptException;
+use OCA\NcLitter\Util\ConfinedFileReader;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\IConfig;
 
@@ -186,24 +187,58 @@ class DeviceService
 	 * Read the last few `[litter]` alerts the OpenClaw monitor appended to its
 	 * JSONL tail (best-effort; empty when disabled or the file is absent).
 	 *
+	 * `alfred_alert_log` is an absolute path an admin types in, so it is confined
+	 * to the app's own directory under the Nextcloud config and data trees before
+	 * being opened — otherwise this is an admin-parameterised arbitrary-file read.
+	 * The read is bounded to the tail window instead of slurping the whole log.
+	 *
 	 * @return array<int,array{ts:string,text:string}>
 	 */
 	public function getAlfredAlerts(int $limit = 8): array
 	{
 		$cfg = $this->getAlfredConfig();
-		if (!$cfg['enabled'] || $cfg['alert_log'] === '' || !is_readable($cfg['alert_log'])) {
+		if (!$cfg['enabled'] || $cfg['alert_log'] === '') {
 			return [];
 		}
-		$lines = @file($cfg['alert_log'], FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-		$lines = array_slice($lines, -max(1, $limit));
+		$path = ConfinedFileReader::confine($cfg['alert_log'], $this->alertLogRoots());
+		if ($path === null) {
+			return [];
+		}
 		$out = [];
-		foreach (array_reverse($lines) as $line) {
+		foreach (array_reverse(ConfinedFileReader::tail($path, max(1, $limit))) as $line) {
 			$row = json_decode($line, true);
 			if (is_array($row) && isset($row['text'])) {
 				$out[] = ['ts' => (string) ($row['ts'] ?? ''), 'text' => (string) $row['text']];
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * Directories the Alfred alert log is allowed to live in.
+	 *
+	 * The OpenClaw monitor writes into `<configdir>/nc_litter/`, so the roots are
+	 * the app's own directory under the Nextcloud config and data trees — not
+	 * those trees wholesale, which would leave `config/config.php` inside the
+	 * confinement.
+	 *
+	 * @return list<string>
+	 */
+	private function alertLogRoots(): array
+	{
+		$parents = [];
+		if (class_exists(\OC::class, false) && is_string(\OC::$configDir) && \OC::$configDir !== '') {
+			$parents[] = \OC::$configDir;
+		}
+		$dataDir = (string) $this->config->getSystemValue('datadirectory', '');
+		if ($dataDir !== '') {
+			$parents[] = $dataDir;
+		}
+		$roots = [];
+		foreach ($parents as $parent) {
+			$roots[] = rtrim($parent, '/') . '/' . Application::APP_ID;
+		}
+		return $roots;
 	}
 
 	// ── Device rows ──────────────────────────────────────────────────────────
