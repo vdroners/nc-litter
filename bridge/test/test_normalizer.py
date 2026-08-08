@@ -24,6 +24,10 @@ EXPECTED_DTO_KEYS = {
     "last_poll_ok_at", "poll_error", "last_seen",
     "status", "status_label", "status_code",
     "drawer_level_pct", "litter_level_pct", "litter_level_state",
+    # Litter-sensor health. `litter_level_pct`/`litter_level_state` are suppressed
+    # when the time-of-flight sensor stops answering, so consumers need a way to
+    # tell "unknown because the sensor is dead" from "genuinely empty".
+    "litter_sensor_ok", "litter_level_raw",
     "cat_weight", "cycle_count", "cycles_total", "cycles_since_full",
     "cycle_capacity", "scoops_saved",
     "sleeping", "sleep_schedule",
@@ -252,3 +256,43 @@ def test_duck_typed_object_source():
 def test_meta_name_override_wins():
     dto = normalizer.normalize(_sample_raw(name="Raw"), {"name": "Override"})
     assert dto["name"] == "Override"
+
+
+def test_a_dead_litter_sensor_is_not_reported_as_an_empty_box():
+    """The failure mode observed on the real unit on 2026-08-07.
+
+    The LR4 litter level is a time-of-flight distance. When that sensor stops
+    answering, the firmware publishes 0xFFFF (65535) and the derived percentage
+    goes wildly negative; the cloud then labels the state EMPTY. Taking that at
+    face value made the app announce "litter critically low" and raise a refill
+    hint for a box that had just been filled -- sending the owner to top up
+    litter when the real fault was a dead sensor.
+    """
+    dead = normalizer.normalize(_sample_raw(litter_level=65535, litter_level_state="EMPTY"))
+    assert dead["litter_sensor_ok"] is False
+    assert dead["litter_level_pct"] is None, "must be unknown, not 0 -- 0 reads as empty"
+    assert dead["litter_level_state"] is None, "the cloud's EMPTY label must be suppressed"
+    assert dead["litter_level_raw"] == 65535
+    assert dead["capabilities"]["litter_level"] is False
+
+
+def test_the_negative_derived_percentage_is_also_treated_as_a_failure():
+    # The same fault seen through the other field: litterLevelPercentage went to
+    # -1300.7 on the live unit. A percentage outside 0..100 is a malfunction.
+    for bad in (-1300.7, -1, 101, 65535):
+        dto = normalizer.normalize(_sample_raw(litter_level=bad))
+        assert dto["litter_sensor_ok"] is False, bad
+        assert dto["litter_level_pct"] is None, bad
+
+
+def test_a_believable_level_is_still_reported_normally():
+    ok = normalizer.normalize(_sample_raw(litter_level=60, litter_level_state="OPTIMAL"))
+    assert ok["litter_sensor_ok"] is True
+    assert ok["litter_level_pct"] == 60
+    assert ok["litter_level_state"] == "OPTIMAL"
+    assert ok["capabilities"]["litter_level"] is True
+
+    # The boundaries are legitimate readings, not failures: a genuinely empty box
+    # reports 0 and a brimming one reports 100.
+    for edge in (0, 100):
+        assert normalizer.normalize(_sample_raw(litter_level=edge))["litter_sensor_ok"] is True, edge

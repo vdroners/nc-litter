@@ -55,6 +55,15 @@
       "detail": "The box has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.",
       "action": "Consider emptying the waste drawer and starting the count fresh.",
       "_note": "Fed by the device's own cycles_after_drawer_full counter, which resets when the drawer is reset. An LR4 reports cycle_capacity around 14, so the old threshold of 40 could never fire once this metric stopped being a local row count."
+    },
+    {
+      "id": "litter_sensor_no_response",
+      "metric_state": "litter_sensor_state",
+      "equals": "no_response",
+      "severity": "error",
+      "title": "The litter-level sensor is not responding",
+      "detail": "The unit is not returning a usable litter level, so it may report the box as empty when it is not. This is a sensor fault, not a refill reminder — topping up the litter will not clear it.",
+      "action": "Power the unit down, check the litter-level sensor window inside the bonnet for dust or a clump and wipe it dry, then reseat the bonnet squarely. If the reading does not return, the sensor board needs attention."
     }
   ]
 }

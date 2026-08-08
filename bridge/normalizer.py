@@ -35,6 +35,24 @@ STATUS_PAUSED = "paused"
 STATUS_FAULT = "fault"
 STATUS_OFFLINE = "offline"
 
+# ---------------------------------------------------------------------------
+# Sensor-failure sentinels.
+#
+# The LR4 litter level comes from a time-of-flight sensor reporting a distance in
+# millimetres (~441 full, ~471 very low, target 450). When that sensor stops
+# answering, the firmware publishes 0xFFFF -- the max value of the 16-bit field
+# -- and the derived percentage goes wildly negative (observed: -1300.7). The
+# cloud then labels it ``litterLevelState: EMPTY``.
+#
+# Taking that at face value is actively misleading: on 2026-08-07 this unit's ToF
+# sensor failed and the app reported "litter critically low" and raised a refill
+# hint, when the truth was that the sensor had died and the litter was full. A
+# false low-litter alarm sends someone to top up a full box; naming the real
+# fault sends them to the sensor. Percentages are 0..100, so anything outside
+# that band is a malfunction, not a reading.
+# ---------------------------------------------------------------------------
+TOF_NO_RESPONSE = 65535
+
 # Map pylitterbot ``LitterBoxStatus`` *codes* (the enum ``.value``) to our
 # normalized status vocabulary. Codes are taken verbatim from
 # pylitterbot/enums.py::LitterBoxStatus (confirmed against pylitterbot 2025.6.2).
@@ -127,6 +145,17 @@ def _bool(value: Any) -> bool:
     return bool(value)
 
 
+def _litter_sensor_ok(source: Any) -> bool:
+    """Whether the litter-level reading is believable.
+
+    See TOF_NO_RESPONSE. A percentage outside 0..100 means the time-of-flight
+    sensor is not answering (0xFFFF raw, a wildly negative derived percentage),
+    not that the box is empty.
+    """
+    raw = _num(_get(source, "litter_level"))
+    return raw is not None and 0.0 <= raw <= 100.0
+
+
 def _status_code(status: Any) -> str | None:
     """Extract the string status *code* from a pylitterbot status.
 
@@ -213,7 +242,11 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
 
     # --- levels / weight / cycles --------------------------------------
     drawer_level = _pct(_get(source, "waste_drawer_level"))
-    litter_level = _pct(_get(source, "litter_level"))
+    # A raw reading outside 0..100 means the sensor is not answering. Report null
+    # (unknown) rather than clamping it to 0, which reads as "empty".
+    litter_raw = _num(_get(source, "litter_level"))
+    litter_sensor_ok = _litter_sensor_ok(source)
+    litter_level = _pct(litter_raw) if litter_sensor_ok else None
     cat_weight = _num(_get(source, "pet_weight", _get(source, "cat_weight")))
     # ``cycle_count`` on an LR4 *is* the lifetime odometer (verified on a real
     # unit: 1684). There is no separate lifetime counter, so ``cycles_total``
@@ -260,7 +293,16 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
         "status_code": code,
         "drawer_level_pct": drawer_level,
         "litter_level_pct": litter_level,
-        "litter_level_state": _enum_value(_get(source, "litter_level_state")),
+        # Suppressed when the sensor is not answering: the cloud reports EMPTY,
+        # which would drive a refill hint for a box that may well be full.
+        "litter_level_state": (
+            _enum_value(_get(source, "litter_level_state")) if litter_sensor_ok else None
+        ),
+        # True only when the level is a believable percentage. The GUI and the
+        # hint engine both key off this so a dead sensor surfaces as a sensor
+        # fault instead of a false low-litter alarm.
+        "litter_sensor_ok": litter_sensor_ok,
+        "litter_level_raw": litter_raw,
         "cat_weight": cat_weight,
         "cycle_count": cycle_count,
         "cycles_total": cycles_total,
@@ -377,5 +419,5 @@ def _capabilities(source: Any) -> dict[str, Any]:
         "power": True,
         "wait_time": True,
         "wait_time_values": [int(w) for w in wait_times],
-        "litter_level": _get(source, "litter_level") is not None,
+        "litter_level": _litter_sensor_ok(source),
     }

@@ -458,6 +458,15 @@ class DeviceService
 			'litter_level_pct' => isset($state['litter_level_pct']) && is_numeric($state['litter_level_pct'])
 				? (int) $state['litter_level_pct'] : null,
 			'cycles_since_empty' => $cyclesSinceEmpty,
+			// A dead litter sensor must not masquerade as an empty box. The bridge
+			// reports `litter_sensor_ok: false` when the time-of-flight reading is
+			// outside 0..100 (0xFFFF raw, or a wildly negative derived percentage),
+			// which suppresses `litter_level_pct` and therefore the refill hints.
+			// Without a rule of its own the app would simply fall silent about a
+			// failed sensor; this names the actual fault instead.
+			'litter_sensor_state' => array_key_exists('litter_sensor_ok', $state)
+				? ($state['litter_sensor_ok'] ? 'ok' : 'no_response')
+				: null,
 		]);
 
 		$state['bridge_error'] = $bridge['ok'] ? null : ($bridge['error'] ?? 'bridge_unreachable');
