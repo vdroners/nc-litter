@@ -119,7 +119,7 @@ Remotely (all via Whisker's API, all exhausted):
 
 | lever | result |
 |---|---|
-| `reset()` (short reset press) | accepted, display code changed, sensors unchanged |
+| `reset()` (short reset press) | accepted; globe-homing **cancels**, self-test never completes |
 | `set_power_status` off → on | boots straight back into the stuck state |
 | `update_firmware()` | **refused by the backend** — see above |
 | `start_cleaning()` | accepted by the cloud, robot never moves, odometer frozen |
@@ -136,6 +136,60 @@ overriding `isLaserboardFirmwareUpdateNeeded: false`. If the reflash fails or th
 board still reports `0.0.0.0` afterwards, the laser board is dead and needs
 replacing. Either way the main control board is not the failed part.
 
+## The unit never finishes booting
+
+Added after a bonnet reseat and a fresh power-up. This is the mechanism that ties
+every symptom together.
+
+```
+t+10s  ROBOT_POWER_OFF   DCX_REFRESH
+t+20s  ROBOT_IDLE        DCX_LAMP_TEST
+t+30s  ROBOT_CAT_DETECT  DCX_LAMP_TEST     catDetect: CAT_DETECT_RESET_HOME
+```
+
+And then nothing. Watched for a further **11 minutes at 15-second intervals: not
+one register changed.** Same status, same display code, same `CYCLE_STATE_WAIT_ON`,
+`isCatDetectPending: false`, odometer still 1718. That is well past the unit's
+7-minute clean-cycle wait timer, so it is not waiting on a timer — it is stuck.
+
+`DCX_LAMP_TEST` is part of the power-up self-test and `CAT_DETECT_RESET_HOME` is
+the startup globe-homing routine. **The unit is hanging inside its own power-up
+self-test and never reaches an operational state.** That accounts for the whole
+symptom set at once:
+
+- alternating red/blue flash — self-test failure indication, not a normal state
+- litter and drawer both reading "empty" — sensor registers never initialised
+- will not cycle *even from the buttons* — it never got far enough to accept one
+- `reset()` appears to work but changes nothing, and a power cycle boots straight
+  back into the same hang
+
+The most likely reason the self-test cannot complete is the laser board: the
+firmware waits on a ToF initialisation that never arrives from a board reporting
+`0.0.0.0`.
+
+A `reset()` issued from this hung state is revealing. It does something, and what
+it does is give up:
+
+```
+reset() -> True
+t+ 0s   ROBOT_CAT_DETECT   DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_HOME
+t+15s   ROBOT_IDLE         DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_CANCELLED
+        ... then unchanged for the remaining 6.75 minutes
+```
+
+`CAT_DETECT_RESET_CANCELLED` — the globe-homing routine was **cancelled, not
+completed**, while `globeMotorFaultStatus` stayed `FAULT_CLEAR` throughout. The
+motor driver reports nothing wrong; the unit simply cannot confirm the globe
+reached its home position, so it abandons the attempt, drops to idle, and stays in
+`DCX_LAMP_TEST` forever. It never leaves the self-test and the odometer never
+moves off 1718.
+
+One further observation. `weightSensor` held **exactly** `-1.5` across all 11
+minutes. Real load cells jitter; a perfectly constant value means that register is
+frozen too, alongside `litterLevel` (sentinel) and `DFILevelMM` (pinned at 77).
+Three independent sensor registers are all stale, which points at the sensor
+read path rather than three separate transducers failing at once.
+
 ## Not faults — do not chase these
 
 - **"Dirty bin is empty" is correct.** `DFILevelPercent: 0` right after emptying
@@ -143,7 +197,23 @@ replacing. Either way the main control board is not the failed part.
 - **`isLaserDirty: false`** — the unit has a dedicated dirty-laser flag and it is
   clear. A dirty window also cannot make a board forget its firmware version.
 - `isHopperRemoved: true` — correct, there is no LitterHopper fitted.
-- `weightSensor: -1.5` — a small tare offset, unrelated, and harmless.
-- `pinchStatus: SWITCH_1_SET` — flagged for completeness. There is no healthy-era
-  reading of this field on record, so whether this is the normal resting state or
-  an engaged switch is **unknown**. Worth a bonnet reseat on that basis alone.
+- `pinchStatus: SWITCH_1_SET` — **ruled out.** The bonnet was removed and reseated;
+  this field did not change, and the owner's bonnet-removal notification fired
+  correctly. An engaged pinch switch would have changed state. This is the normal
+  resting value for this unit.
+- **Bonnet reseat has already been done** and did not help. The bonnet switch and
+  the notification path both work.
+
+## Owner checks still outstanding
+
+Worth doing before the unit is sent back, and cheap:
+
+- With the power off, lift the globe and confirm nothing is wedged beneath it and
+  that it seats squarely — the Smart Weight load cells live under there, and the
+  startup routine that hangs (`CAT_DETECT_RESET_HOME`) is the globe-homing step.
+  A globe that cannot reach its home position would stall the same self-test.
+- Reseat the laser board's ribbon connector at both ends, power removed. This is
+  the only user-serviceable cause of a board that will not enumerate.
+
+Neither will restore a laser board whose flash is blank; both are worth ruling
+out so the warranty conversation is about the board and nothing else.
