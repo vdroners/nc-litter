@@ -49,7 +49,62 @@ Also healthy: `globeMotorFaultStatus: FAULT_CLEAR`,
 The motors report no fault, the bonnet is seated, the panel is unlocked, and the
 board answers every command. What it will not do is run a cycle: `start_cleaning()`
 returns `True` (the cloud accepts it) and then nothing happens — 60 seconds later
-every register is unchanged and the odometer is still on 1718.
+every register is unchanged and the odometer is still on 1718. The next section
+explains why.
+
+## The unit never finishes booting
+
+This is the mechanism that ties every symptom together. Observed after a bonnet
+reseat and a fresh power-up.
+
+```
+t+10s  ROBOT_POWER_OFF   DCX_REFRESH
+t+20s  ROBOT_IDLE        DCX_LAMP_TEST
+t+30s  ROBOT_CAT_DETECT  DCX_LAMP_TEST     catDetect: CAT_DETECT_RESET_HOME
+```
+
+And then nothing. Watched for a further **11 minutes at 15-second intervals: not
+one register changed.** Same status, same display code, same `CYCLE_STATE_WAIT_ON`,
+`isCatDetectPending: false`, odometer still 1718. That is well past the unit's
+7-minute clean-cycle wait timer, so it is not waiting on a timer — it is stuck.
+
+`DCX_LAMP_TEST` is part of the power-up self-test and `CAT_DETECT_RESET_HOME` is
+the startup globe-homing routine. **The unit is hanging inside its own power-up
+self-test and never reaches an operational state.** That accounts for the whole
+symptom set at once:
+
+- alternating red/blue flash — self-test failure indication, not a normal state
+- litter and drawer both reading "empty" — sensor registers never initialised
+- will not cycle *even from the buttons* — it never got far enough to accept one
+- `reset()` appears to work but changes nothing, and a power cycle boots straight
+  back into the same hang
+
+The most likely reason the self-test cannot complete is the laser board: the
+firmware waits on a ToF initialisation that never arrives from a board reporting
+`0.0.0.0`.
+
+A `reset()` issued from this hung state is revealing. It does something, and what
+it does is give up:
+
+```
+reset() -> True
+t+ 0s   ROBOT_CAT_DETECT   DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_HOME
+t+15s   ROBOT_IDLE         DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_CANCELLED
+        ... then unchanged for the remaining 6.75 minutes
+```
+
+`CAT_DETECT_RESET_CANCELLED` — the globe-homing routine was **cancelled, not
+completed**, while `globeMotorFaultStatus` stayed `FAULT_CLEAR` throughout. The
+motor driver reports nothing wrong; the unit simply cannot confirm the globe
+reached its home position, so it abandons the attempt, drops to idle, and stays in
+`DCX_LAMP_TEST` forever. It never leaves the self-test and the odometer never
+moves off 1718.
+
+One further observation. `weightSensor` held **exactly** `-1.5` across all 11
+minutes. Real load cells jitter; a perfectly constant value means that register is
+frozen too, alongside `litterLevel` (sentinel) and `DFILevelMM` (pinned at 77).
+Three independent sensor registers are all stale, which points at the sensor
+read path rather than three separate transducers failing at once.
 
 ## Timeline — the board degraded over four days before it failed
 
@@ -135,60 +190,6 @@ Have Whisker **force a laser-board firmware reflash on serial `LR4C839073`**,
 overriding `isLaserboardFirmwareUpdateNeeded: false`. If the reflash fails or the
 board still reports `0.0.0.0` afterwards, the laser board is dead and needs
 replacing. Either way the main control board is not the failed part.
-
-## The unit never finishes booting
-
-Added after a bonnet reseat and a fresh power-up. This is the mechanism that ties
-every symptom together.
-
-```
-t+10s  ROBOT_POWER_OFF   DCX_REFRESH
-t+20s  ROBOT_IDLE        DCX_LAMP_TEST
-t+30s  ROBOT_CAT_DETECT  DCX_LAMP_TEST     catDetect: CAT_DETECT_RESET_HOME
-```
-
-And then nothing. Watched for a further **11 minutes at 15-second intervals: not
-one register changed.** Same status, same display code, same `CYCLE_STATE_WAIT_ON`,
-`isCatDetectPending: false`, odometer still 1718. That is well past the unit's
-7-minute clean-cycle wait timer, so it is not waiting on a timer — it is stuck.
-
-`DCX_LAMP_TEST` is part of the power-up self-test and `CAT_DETECT_RESET_HOME` is
-the startup globe-homing routine. **The unit is hanging inside its own power-up
-self-test and never reaches an operational state.** That accounts for the whole
-symptom set at once:
-
-- alternating red/blue flash — self-test failure indication, not a normal state
-- litter and drawer both reading "empty" — sensor registers never initialised
-- will not cycle *even from the buttons* — it never got far enough to accept one
-- `reset()` appears to work but changes nothing, and a power cycle boots straight
-  back into the same hang
-
-The most likely reason the self-test cannot complete is the laser board: the
-firmware waits on a ToF initialisation that never arrives from a board reporting
-`0.0.0.0`.
-
-A `reset()` issued from this hung state is revealing. It does something, and what
-it does is give up:
-
-```
-reset() -> True
-t+ 0s   ROBOT_CAT_DETECT   DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_HOME
-t+15s   ROBOT_IDLE         DCX_LAMP_TEST   catDetect: CAT_DETECT_RESET_CANCELLED
-        ... then unchanged for the remaining 6.75 minutes
-```
-
-`CAT_DETECT_RESET_CANCELLED` — the globe-homing routine was **cancelled, not
-completed**, while `globeMotorFaultStatus` stayed `FAULT_CLEAR` throughout. The
-motor driver reports nothing wrong; the unit simply cannot confirm the globe
-reached its home position, so it abandons the attempt, drops to idle, and stays in
-`DCX_LAMP_TEST` forever. It never leaves the self-test and the odometer never
-moves off 1718.
-
-One further observation. `weightSensor` held **exactly** `-1.5` across all 11
-minutes. Real load cells jitter; a perfectly constant value means that register is
-frozen too, alongside `litterLevel` (sentinel) and `DFILevelMM` (pinned at 77).
-Three independent sensor registers are all stale, which points at the sensor
-read path rather than three separate transducers failing at once.
 
 ## Not faults — do not chase these
 
