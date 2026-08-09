@@ -10,6 +10,77 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.4.0] - 2026-08-09
+
+Sensor health. The unit's laser (time-of-flight) board failed on 2026-08-07; this
+app had been sampling every five minutes throughout and recorded four days of clear
+warning signs without raising one of them. Every reading looked like a number, so
+it was used as one. Full hardware evidence in
+`docs/lr4-laser-board-failure-2026-08.md`; plan in
+`docs/plans/sensor-health-and-diagnostics.md`.
+
+### Added
+
+- `SensorHealthService`: judges a reading against its neighbours instead of in
+  isolation. Detects an impossible drawer reversal, a diagnostic register that has
+  stopped moving, a unit that has stopped cycling, and a power-up self-test that
+  never completes.
+- Diagnostic registers captured into the DTO and telemetry: `display_code`,
+  `pinch_status`, `weight_sensor`, `dfi_level_mm`, the globe/USB fault statuses,
+  `laser_dirty`, and per-board firmware for ESP, PIC and the laser board. When the
+  board failed, none of this had ever been recorded — whether `SWITCH_1_SET` was
+  this unit's resting `pinch_status` could only be settled by physically reseating
+  the bonnet.
+- Laser-board health: firmware `0.0.0.0` is reported as a board that is not
+  responding rather than as a version. The vendor's own update service is compared
+  against it, so the contradiction that blocks a reflash (`0.0.0.0` reported,
+  `5.0.2.1` published, "no update needed") is named instead of rediscovered.
+- Command-execution verification: a commanded cycle arms a check against the
+  device's odometer. The cloud answering `ok` means the request was accepted, not
+  that the robot moved — the faulted unit answered `start_cleaning() -> True` and
+  sat perfectly still.
+- Nine maintenance rules for the above, and a backtest suite that replays 2655 real
+  recorded samples (`tests/fixtures/real-telemetry-2026-08.csv`) through the
+  detectors.
+- GUI: level chips show `sensor fault` instead of a number when the server
+  distrusts that sensor, and Maintenance lists the measurements behind an advisory.
+
+### Changed
+
+- Level notifications now require the condition to hold across **two consecutive
+  samples**, and are suppressed entirely for a sensor already known to be
+  unreliable. Rising-edge-only was not enough: a flapping sensor produces genuine
+  rising edges, which is how four false drawer-full notifications went out between
+  08-04 and 08-06. The suppressed condition surfaces as a sensor-fault hint, which
+  is the honest description.
+- Maintenance hints render the remedy separately from the explanation instead of
+  falling back to it.
+
+### Fixed
+
+- `/api/alfred/alerts` returned **HTTP 500** on every install with an Alfred alert
+  log configured: `alertLogRoots()` called `getTempBaseDirectory()`, which
+  `OCP\ITempManager` has never had — the real name is `getTempBaseDir()`. It
+  survived because the test stub declared the wrong name too, so the fake matched
+  the stub and the suite was only ever checking itself. Stub, fake and call site
+  now all follow the real interface, and a test asserts the method name against
+  `OCP\ITempManager` directly. Found by reading the browser console after deploy,
+  not by the suite.
+
+### Notes
+
+- Two detectors that seemed obvious were **built, backtested and discarded**
+  because the replay showed them firing during the healthy week: a litter-rise
+  check (the level legitimately wanders ±20 points a day as the cat digs) and a
+  bare large-drawer-jump check (emptying the drawer genuinely produces a 100 → 0
+  drop — only a *reversal* is impossible). An app that cries wolf on a healthy unit
+  is how the real signal came to be ignored for four days.
+- The stall threshold is 36 hours, not 24, because the longest gap between cycles
+  on the healthy unit was a measured 29.3 hours.
+- `frozen_register` and `self_test_stuck` are covered by unit tests only: the
+  registers they read were added in this release and so have no history to
+  backtest against.
+
 ## [0.3.2] - 2026-08-03
 
 ### Fixed

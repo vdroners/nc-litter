@@ -109,6 +109,26 @@ def _get(src: Any, key: str, default: Any = None) -> Any:
     return getattr(src, key, default)
 
 
+def _raw(src: Any, key: str, default: Any = None) -> Any:
+    """Read a key straight off the device payload, bypassing ``pylitterbot``.
+
+    Most of the LR4's diagnostic registers have no property on the library's
+    ``LitterRobot4`` -- ``pinchStatus``, ``weightSensor``, ``DFILevelMM``,
+    ``displayCode``, ``isLaserDirty`` and the per-board firmware versions all
+    live only in ``robot._data``. They are exactly the fields that matter when
+    something breaks, so this reaches past the library on purpose rather than
+    doing without them.
+
+    Mock state and the unit tests pass plain dicts, which are read directly.
+    """
+    data = getattr(src, "_data", None)
+    if isinstance(data, dict):
+        return data.get(key, default)
+    if isinstance(src, dict):
+        return src.get(key, default)
+    return default
+
+
 def _num(value: Any) -> float | None:
     """Return a finite number or ``None``."""
     try:
@@ -154,6 +174,109 @@ def _litter_sensor_ok(source: Any) -> bool:
     """
     raw = _num(_get(source, "litter_level"))
     return raw is not None and 0.0 <= raw <= 100.0
+
+
+def _laser_board_ok(version: Any) -> bool | None:
+    """Whether the laser (ToF) daughterboard is reporting a real firmware version.
+
+    A board that is communicating says what it is running. ``0.0.0.0`` is not a
+    version, it is the absence of one -- either the flash is blank after a failed
+    programming attempt or the board is not answering at all. Observed on the real
+    unit on 2026-08-07, alongside both of its time-of-flight sensors going dead,
+    while the ESP and PIC boards both reported current versions.
+
+    ``None`` when nothing was reported, which is not the same claim as "bad".
+    """
+    if version is None:
+        return None
+    # The unit reports this two ways -- "0.0.0.0" and, in the Hex field,
+    # "0.0.00 (Production)" -- so take the leading version token and compare the
+    # parts numerically. String equality against "0.0.0.0" misses "0.0.00".
+    text = str(version).strip().split()[0] if str(version).strip() else ""
+    if text == "":
+        return None
+    parts = [p for p in text.split(".") if p != ""]
+    if not parts:
+        return None
+    try:
+        return any(int(p) != 0 for p in parts)
+    except ValueError:
+        # Not a dotted-numeric version at all. Unparseable is not evidence of a
+        # fault, so say "unknown" rather than accusing a healthy board.
+        return None
+
+
+def _firmware_health(reported: Any, details: Any) -> dict[str, Any]:
+    """Compare the laser board's reported version against Whisker's own target.
+
+    ``details`` is the payload of ``get_firmware_details()``. On the real unit on
+    2026-08-08 it read::
+
+        isLaserboardFirmwareUpdateNeeded: false
+        latestFirmware.laserBoardFirmwareVersion: "5.0.2.1"
+        laserBoardFirmwareVersion (actual):       "0.0.0.0"
+
+    Whisker's backend is comparing against ``0.0.0.0`` and concluding that nothing
+    needs doing, which is why a forced reflash is refused -- the one repair that
+    could distinguish a blank flash from a dead board. That contradiction is worth
+    naming rather than leaving to be rediscovered, so it is reported as its own
+    signal instead of being folded into "firmware out of date".
+    """
+    if not isinstance(details, dict):
+        return {"laser_board_target": None, "backend_update_needed": None,
+                "backend_contradiction": None}
+    latest = details.get("latestFirmware")
+    target = None
+    if isinstance(latest, dict):
+        target = _enum_value(latest.get("laserBoardFirmwareVersion"))
+    needed = details.get("isLaserboardFirmwareUpdateNeeded")
+    needed = bool(needed) if isinstance(needed, bool) else None
+    have = _enum_value(reported)
+    # A contradiction only when all three facts are known: the versions genuinely
+    # differ and the backend still says no update is required.
+    contradiction = None
+    if target is not None and have is not None and needed is not None:
+        contradiction = have != target and needed is False
+    return {"laser_board_target": target, "backend_update_needed": needed,
+            "backend_contradiction": contradiction}
+
+
+def _diagnostics(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Per-board and per-sensor registers, kept for diagnosis rather than display.
+
+    None of this drives the GUI's normal state. It exists because when the laser
+    board failed there was no history for any of it -- whether ``SWITCH_1_SET``
+    was this unit's resting value for ``pinchStatus`` could only be settled by
+    physically reseating the bonnet. Recording it makes the *next* fault a lookup
+    instead of an experiment. Costs one dict per poll; the bridge already receives
+    every one of these fields.
+    """
+    laser_version = _raw(source, "laserBoardFirmwareVersion")
+    return {
+        "display_code": _enum_value(_raw(source, "displayCode")),
+        "pinch_status": _enum_value(_raw(source, "pinchStatus")),
+        # Load-cell reading. Real load cells jitter; a bit-identical repeat across
+        # hours means the register is not being read, not that nothing moved.
+        "weight_sensor": _num(_raw(source, "weightSensor")),
+        # The waste-drawer ToF in millimetres -- the raw form of drawer_level_pct,
+        # and the one that shows a stuck sensor while the percentage looks sane.
+        "dfi_level_mm": _num(_raw(source, "DFILevelMM")),
+        "globe_motor_fault": _enum_value(_raw(source, "globeMotorFaultStatus")),
+        "globe_motor_retract_fault": _enum_value(
+            _raw(source, "globeMotorRetractFaultStatus")),
+        "usb_fault": _enum_value(_raw(source, "USBFaultStatus")),
+        # The unit's own dirty-lens flag. Distinguishes a lens that needs a wipe
+        # from a board that has stopped talking -- remedies that look alike from
+        # the outside and are nothing alike underneath.
+        "laser_dirty": _raw(source, "isLaserDirty"),
+        "firmware": {
+            "esp": _enum_value(_raw(source, "espFirmware")),
+            "pic": _enum_value(_raw(source, "picFirmwareVersion")),
+            "laser_board": _enum_value(laser_version),
+        },
+        "laser_board_ok": _laser_board_ok(laser_version),
+        **_firmware_health(laser_version, (meta or {}).get("firmware_details")),
+    }
 
 
 def _status_code(status: Any) -> str | None:
@@ -330,6 +453,9 @@ def normalize(source: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]
         "error": error,
         "error_label": error_label,
         "capabilities": _capabilities(source),
+        # Diagnostic registers. Not shown as normal state -- recorded so a future
+        # fault has a healthy-era baseline to compare against.
+        "diagnostics": _diagnostics(source, meta),
         "bridge": {
             "version": str(meta.get("bridge_version", "0.0.0")),
             "uptime_s": _int_or_none(meta.get("uptime_s")) or 0,

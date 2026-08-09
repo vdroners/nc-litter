@@ -1,64 +1,164 @@
 # Human-readable mirror of knowledge/maintenance_thresholds.json.
 #
-# NO CODE READS THIS FILE — MaintenanceHintService loads the JSON. It exists so
+# NO CODE READS THIS FILE -- MaintenanceHintService loads the JSON. It exists so
 # the copy operators see can be reviewed and edited comfortably. If you change
-# one, change the other: `make gate-preflight` compares the two and fails on
-# drift.
+# one, change the other: the G14 gate compares the two and fails on drift.
 #
 # Every comparator present on a rule must hold (they are ANDed), which is how the
 # warn tiers carry an upper bound so a full drawer fires `danger` alone instead of
 # `warn` and `danger` together.
+#
+# `_comment` is deliberately absent below: the gate strips it from the JSON before
+# comparing, so carrying it here would itself be drift.
+#
+# Maintenance advisories, read by MaintenanceHintService.
+# Every comparator present on a rule must hold (they are ANDed), which is how
+# the warn tiers carry an upper bound so a full drawer fires `danger` only
+# instead of `warn` and `danger` together.
+# knowledge/maintenance_thresholds.yaml is a human-readable mirror of this file;
+# keep both in sync.
 
-_comment:
-  - "Maintenance advisories, read by MaintenanceHintService."
-  - "Every comparator present on a rule must hold (they are ANDed), which is how"
-  - "the warn tiers carry an upper bound so a full drawer fires `danger` only"
-  - "instead of `warn` and `danger` together."
-  - knowledge/maintenance_thresholds.yaml is a human-readable mirror of this file;
-  - keep both in sync.
 thresholds:
-  - id: drawer_level_warn
-    metric_state: drawer_level_pct
-    gte: 90
-    lt: 98
-    severity: warn
-    title: Waste drawer filling up
-    detail: The drawer is nearly full. A tidy household empties it before it insists.
-    action: Empty the waste drawer at your next convenience and seat a fresh liner.
-  - id: drawer_level_danger
-    metric_state: drawer_level_pct
-    gte: 98
-    severity: danger
-    title: Waste drawer full
-    detail: The drawer has reached capacity. The box will decline to cycle until it is emptied.
-    action: "Empty the waste drawer now, fit a new liner, and slide it home until it clicks."
-  - id: litter_level_warn
-    metric_state: litter_level_pct
-    lte: 20
-    gt: 8
-    severity: warn
-    title: Litter running low
-    detail: The globe is getting light on litter. A modest top-up keeps every cycle clean.
-    action: Add fresh clumping litter up to the fill line inside the globe.
-  - id: litter_level_danger
-    metric_state: litter_level_pct
-    lte: 8
-    severity: danger
-    title: Litter critically low
-    detail: There is barely enough litter for a proper cycle. Your companion deserves better footing.
-    action: Refill the globe with fresh litter to the fill line before the next visit.
-  - id: cycles_since_empty_info
-    metric_state: cycles_since_empty
-    gte: 10
-    severity: info
-    title: Several cycles since the last empty
-    detail: The box has run a good many cycles since the drawer was last emptied. A refresh now avoids a surprise later.
-    action: Consider emptying the waste drawer and starting the count fresh.
-    _note: "Fed by the device's own cycles_after_drawer_full counter, which resets when the drawer is reset. An LR4 reports cycle_capacity around 14, so the old threshold of 40 could never fire once this metric stopped being a local row count."
-  - id: litter_sensor_no_response
-    metric_state: litter_sensor_state
-    equals: no_response
-    severity: error
-    title: The litter-level sensor is not responding
-    detail: "The unit is not returning a usable litter level, so it may report the box as empty when it is not. This is a sensor fault, not a refill reminder \u2014 topping up the litter will not clear it."
-    action: "Power the unit down, check the litter-level sensor window inside the bonnet for dust or a clump and wipe it dry, then reseat the bonnet squarely. If the reading does not return, the sensor board needs attention."
+- id: drawer_level_warn
+  metric_state: drawer_level_pct
+  gte: 90
+  lt: 98
+  severity: warn
+  title: Waste drawer filling up
+  detail: The drawer is nearly full. A tidy household empties it before it insists.
+  action: Empty the waste drawer at your next convenience and seat a fresh liner.
+- id: drawer_level_danger
+  metric_state: drawer_level_pct
+  gte: 98
+  severity: danger
+  title: Waste drawer full
+  detail: The drawer has reached capacity. The box will decline to cycle until it is emptied.
+  action: Empty the waste drawer now, fit a new liner, and slide it home until it clicks.
+- id: litter_level_warn
+  metric_state: litter_level_pct
+  lte: 20
+  gt: 8
+  severity: warn
+  title: Litter running low
+  detail: The globe is getting light on litter. A modest top-up keeps every cycle clean.
+  action: Add fresh clumping litter up to the fill line inside the globe.
+- id: litter_level_danger
+  metric_state: litter_level_pct
+  lte: 8
+  severity: danger
+  title: Litter critically low
+  detail: There is barely enough litter for a proper cycle. Your companion deserves better footing.
+  action: Refill the globe with fresh litter to the fill line before the next visit.
+- id: cycles_since_empty_info
+  metric_state: cycles_since_empty
+  gte: 10
+  severity: info
+  title: Several cycles since the last empty
+  detail: The box has run a good many cycles since the drawer was last emptied. A refresh now avoids a
+    surprise later.
+  action: Consider emptying the waste drawer and starting the count fresh.
+  _note: Fed by the device's own cycles_after_drawer_full counter, which resets when the drawer is reset.
+    An LR4 reports cycle_capacity around 14, so the old threshold of 40 could never fire once this metric
+    stopped being a local row count.
+- id: litter_sensor_no_response
+  metric_state: litter_sensor_state
+  equals: no_response
+  severity: error
+  title: The litter-level sensor is not responding
+  detail: The unit is not returning a usable litter level, so it may report the box as empty when it is
+    not. This is a sensor fault, not a refill reminder — topping up the litter will not clear it.
+  action: Power the unit down, check the litter-level sensor window inside the bonnet for dust or a clump
+    and wipe it dry, then reseat the bonnet squarely. If the reading does not return, the sensor board
+    needs attention.
+- id: drawer_sensor_implausible
+  metric_state: drawer_sensor_state
+  equals: implausible
+  severity: error
+  title: The waste-drawer sensor is misreporting
+  detail: The drawer level has jumped by more than 60 points and back again within a few minutes. A drawer
+    cannot fill and empty that fast, so the reading cannot be trusted — the sensor is failing, not the
+    drawer. Drawer-full alerts are being held back while this persists.
+  action: Power the unit down and check the drawer sensor window for dust or a stray clump, then wipe
+    it dry and reseat the drawer squarely. If the level keeps jumping afterwards, the sensor board needs
+    attention.
+- id: weight_sensor_frozen
+  metric_state: weight_sensor_state
+  equals: frozen
+  severity: warn
+  title: The weight sensor has stopped changing
+  detail: The load-cell reading has been bit-identical for hours, across cycles that should have changed
+    it. Real load cells always move a little, so an exact repeat means the value is no longer being read
+    rather than that nothing has happened.
+  action: Power the unit down for a minute and back up. If the reading is still identical afterwards,
+    the sensor is not reporting and the unit needs service — this is not something litter or levelling
+    will fix.
+- id: drawer_distance_frozen
+  metric_state: drawer_distance_state
+  equals: frozen
+  severity: warn
+  title: The drawer distance sensor has stopped changing
+  detail: The raw drawer measurement has been pinned on one value for hours, through cycles that should
+    have moved it. The percentage derived from it may still look plausible while being meaningless.
+  action: Power the unit down and clean the drawer sensor window, then power up. If it stays pinned, the
+    sensor board needs attention.
+- id: laser_board_unprogrammed
+  metric_state: laser_board_state
+  equals: unprogrammed
+  severity: error
+  title: The laser (sensor) board is not responding
+  detail: The board that carries the time-of-flight sensors is reporting firmware version 0.0.0.0. That
+    is not a version — it is the absence of one, meaning the board is either unprogrammed or not communicating.
+    Every reading that depends on it (litter level, drawer distance) is unreliable while this is true.
+  action: 'This is not user-serviceable beyond one check: with the power off, reseat the sensor board''s
+    ribbon connector at both ends. If the version is still 0.0.0.0, contact Whisker support and ask them
+    to force a laser-board firmware reflash by serial number. Cleaning the sensor window will not fix
+    it — a dirty lens still reports its firmware version.'
+- id: firmware_backend_contradiction
+  metric_state: firmware_backend_state
+  equals: contradiction
+  severity: warn
+  title: The vendor's update service disagrees with the hardware
+  detail: The sensor board's firmware version does not match the version the vendor publishes as current,
+    yet the vendor's own update service reports that no update is needed. That contradiction means the
+    normal update path will refuse to run, so the board cannot be repaired by asking it to update itself.
+  action: Contact Whisker support and ask them to force a firmware reflash for this unit by serial number,
+    noting that the automatic updater reports no update is required.
+- id: cycle_activity_stalled
+  metric_state: cycle_activity_state
+  equals: stalled
+  severity: warn
+  title: No cleaning cycle has completed in over a day
+  detail: The unit's own cycle counter has not advanced for more than 36 hours while the unit reports
+    itself awake and ready. A quiet day is normal; a day and a half without a single cycle usually is
+    not.
+  action: Try a cycle from the app or the unit's button. If the unit accepts the command and nothing moves,
+    note that — a command that is accepted but not carried out points at the unit rather than the network.
+- id: cycle_activity_stalled_long
+  metric_state: cycle_activity_state
+  equals: stalled_long
+  severity: error
+  title: No cleaning cycle has completed in three days
+  detail: The cycle counter has not moved for over 72 hours. At this point the unit is not cleaning at
+    all, whatever it reports about its own status.
+  action: Check whether the unit completes a cycle when commanded. If it does not, it needs service; record
+    what its display shows while refusing.
+- id: self_test_stuck
+  metric_state: self_test_state
+  equals: stuck
+  severity: error
+  title: The unit is stuck in its power-up self-test
+  detail: The display has been showing a start-up self-test code for over an hour. The unit has not finished
+    booting, which is why its levels may read empty and why its buttons do nothing — there is no running
+    firmware behind them yet. This is a fault, not a setting.
+  action: Power the unit down fully, wait a minute, and power it back up. If it returns to the same self-test
+    code, the unit needs service — note the code shown, as it identifies which self-test is failing.
+- id: command_not_executed
+  metric_state: command_state
+  equals: not_executed
+  severity: error
+  title: The unit accepted a command but did not carry it out
+  detail: A cleaning cycle was requested and acknowledged, but the unit's cycle counter never moved. The
+    request reached the unit; the unit did not act on it. That distinction matters — the network and the
+    account are fine.
+  action: Try the button on the unit itself. If that is also ignored, the unit is not executing commands
+    and needs service.

@@ -104,6 +104,7 @@ class DeviceService
 		private AdminSecretCrypto $crypto,
 		private ErrorDecoderService $errors,
 		private MaintenanceHintService $maintenance,
+		private SensorHealthService $sensorHealth,
 		private AuditService $audit,
 		private IConfig $config,
 		private ITempManager $tempManager,
@@ -241,7 +242,7 @@ class DeviceService
 				$parents[] = rtrim($dataDir, '/') . '/appdata_' . $instanceId;
 			}
 		}
-		$tempBase = $this->tempManager->getTempBaseDirectory();
+		$tempBase = $this->tempManager->getTempBaseDir();
 		if (is_string($tempBase) && $tempBase !== '') {
 			$parents[] = $tempBase;
 		}
@@ -452,6 +453,7 @@ class DeviceService
 
 		$cyclesSinceEmpty = $this->cyclesSinceEmpty($state);
 		$state['cycles_since_empty'] = $cyclesSinceEmpty;
+		$sensors = $this->sensorHealth->forDevice($deviceId, $state);
 		$state['maintenance_hints'] = $this->maintenance->hintsFor([
 			'drawer_level_pct' => isset($state['drawer_level_pct']) && is_numeric($state['drawer_level_pct'])
 				? (int) $state['drawer_level_pct'] : null,
@@ -467,7 +469,25 @@ class DeviceService
 			'litter_sensor_state' => array_key_exists('litter_sensor_ok', $state)
 				? ($state['litter_sensor_ok'] ? 'ok' : 'no_response')
 				: null,
+			// Cross-sample judgements: an impossible transition, a register that
+			// has stopped moving, a unit that has not cycled, a self-test that
+			// never completed. None of these can be seen in a single reading,
+			// which is why four days of a failing drawer sensor were recorded
+			// here without complaint before 2026-08-07.
+			...$sensors['metrics'],
+			// A commanded cycle the unit acknowledged and then did not perform.
+			// Distinguishes "the request never arrived" from "the request arrived
+			// and was ignored" — the second points at the unit, not the network.
+			'command_state' => ($this->commandVerification($deviceId)['verdict'] ?? null) === 'not_executed'
+				? 'not_executed' : null,
 		]);
+
+		// Surfaced so the GUI can explain *why* a sensor is distrusted, and so a
+		// support conversation has the actual numbers rather than an adjective.
+		$state['sensor_health'] = [
+			'trust' => $sensors['trust'],
+			'evidence' => $sensors['evidence'],
+		];
 
 		$state['bridge_error'] = $bridge['ok'] ? null : ($bridge['error'] ?? 'bridge_unreachable');
 		return $state;
@@ -620,11 +640,110 @@ class DeviceService
 			'error' => $resp['error'],
 			'params' => $payload,
 		]);
+		if ($resp['ok'] && in_array($action, self::VERIFIED_ACTIONS, true)) {
+			$this->armCommandVerification($deviceId, $action);
+		}
 		return [
 			'ok' => $resp['ok'],
 			'result' => $resp['body'] ?? ['error' => $resp['error'], 'status' => $resp['status']],
 			'status' => $resp['ok'] ? 200 : $this->upstreamStatus($resp['status']),
 		];
+	}
+
+	// ── Did the unit actually do it? ─────────────────────────────────────────
+	//
+	// The bridge returning `ok` means the Whisker cloud accepted the request. It
+	// does NOT mean the robot acted on it. On 2026-08-08 the faulted unit answered
+	// `start_cleaning() -> True` and then sat perfectly still: sixty seconds later
+	// every register was unchanged and the odometer had not moved. Treating
+	// acknowledgement as execution made the app report success while nothing
+	// happened, which is the same mistake as trusting a sensor's number because it
+	// is a number.
+	//
+	// So a commanded cycle arms a check: remember the odometer, and let the next
+	// telemetry ticks settle whether it moved.
+
+	/** Actions whose execution is verifiable by watching the cycle odometer. */
+	private const VERIFIED_ACTIONS = ['clean', 'cycle', 'empty', 'reset'];
+
+	/** How long the unit gets to start turning before we call it a no-show. */
+	public const COMMAND_GRACE_S = 600;
+
+	private function armCommandVerification(int $deviceId, string $action): void
+	{
+		// `getState()` returns the request envelope, not the DTO. Unwrapping it is not
+		// optional bookkeeping: reading `cycles_total` off the envelope silently
+		// yields null forever, which is precisely the mistake that left the sibling
+		// vacuum app with 516 all-null telemetry rows and no history at all.
+		$resp = $this->bridge->getState($deviceId);
+		$body = is_array($resp['body'] ?? null) ? $resp['body'] : [];
+		$state = is_array($body['state'] ?? null) ? $body['state'] : $body;
+		$this->config->setAppValue(Application::APP_ID, $this->commandKey($deviceId), json_encode([
+			'action' => $action,
+			'at' => time(),
+			'odometer' => $this->odometerOf($state),
+			'verdict' => 'pending',
+		], JSON_THROW_ON_ERROR));
+	}
+
+	/**
+	 * The device's own lifetime cycle count, which is the only movement that proves
+	 * a cycle ran. `cycle_count` is the fallback because older bridges reported only
+	 * that one.
+	 *
+	 * @param array<string, mixed> $state
+	 */
+	private function odometerOf(array $state): ?int
+	{
+		$value = $state['cycles_total'] ?? $state['cycle_count'] ?? null;
+		return is_numeric($value) ? (int) $value : null;
+	}
+
+	/**
+	 * Settle an armed check against the live odometer. Called on each telemetry
+	 * ingest, and cheap when nothing is armed.
+	 *
+	 * @param array<string, mixed> $state the live bridge DTO
+	 */
+	public function settleCommandVerification(int $deviceId, array $state): void
+	{
+		$pending = $this->commandVerification($deviceId);
+		if ($pending === null || ($pending['verdict'] ?? '') !== 'pending') {
+			return;
+		}
+		$odometer = $this->odometerOf($state);
+		$armed = $pending['odometer'];
+
+		// Moved: the unit did the thing. Clear the record entirely rather than
+		// storing a success nobody reads.
+		if ($odometer !== null && $armed !== null && $odometer > $armed) {
+			$this->config->deleteAppValue(Application::APP_ID, $this->commandKey($deviceId));
+			return;
+		}
+		if (time() - (int) $pending['at'] < self::COMMAND_GRACE_S) {
+			return;     // still within its grace period
+		}
+		// Grace elapsed with the odometer untouched. Record the verdict so the hint
+		// can name it; it is cleared as soon as any later cycle completes.
+		$pending['verdict'] = 'not_executed';
+		$this->config->setAppValue(Application::APP_ID, $this->commandKey($deviceId),
+			json_encode($pending, JSON_THROW_ON_ERROR));
+	}
+
+	/** @return array<string, mixed>|null */
+	public function commandVerification(int $deviceId): ?array
+	{
+		$raw = $this->config->getAppValue(Application::APP_ID, $this->commandKey($deviceId), '');
+		if ($raw === '') {
+			return null;
+		}
+		$data = json_decode($raw, true);
+		return is_array($data) ? $data : null;
+	}
+
+	private function commandKey(int $deviceId): string
+	{
+		return 'command_verify_' . $deviceId;
 	}
 
 	/**

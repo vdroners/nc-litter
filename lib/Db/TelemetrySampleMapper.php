@@ -51,6 +51,55 @@ class TelemetrySampleMapper extends QBMapper
 	}
 
 	/**
+	 * The newest `$limit` samples, newest first.
+	 *
+	 * Two of them are enough to confirm a level alert before it is sent. A single
+	 * reading was all the old edge detector had, so a sensor that flapped 0 → 100
+	 * produced a genuine rising edge and a genuine — and false — drawer-full
+	 * notification. Four of those went out between 08-04 and 08-06 while the
+	 * sensor was failing.
+	 *
+	 * @return TelemetrySample[]
+	 */
+	public function newest(int $deviceId, int $limit = 2): array
+	{
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
+			->orderBy('ts', 'DESC')
+			->addOrderBy('id', 'DESC')
+			->setMaxResults(max(1, $limit));
+		return $this->findEntities($qb);
+	}
+
+	/**
+	 * Samples for a device from `$sinceTs` onward, oldest first.
+	 *
+	 * Feeds SensorHealthService, which judges a reading against its neighbours
+	 * rather than in isolation — a drawer level that swings 0 → 100 → 0 is only
+	 * visibly impossible next to the samples either side of it. `latest()` alone
+	 * could never see that, which is how four days of a failing sensor were
+	 * recorded here without one word of complaint.
+	 *
+	 * Oldest-first because every detector walks forward in time.
+	 *
+	 * @return TelemetrySample[]
+	 */
+	public function since(int $deviceId, int $sinceTs, int $limit = 5000): array
+	{
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('device_id', $qb->createNamedParameter($deviceId, IQueryBuilder::PARAM_INT)))
+			->andWhere($qb->expr()->gte('ts', $qb->createNamedParameter($sinceTs, IQueryBuilder::PARAM_INT)))
+			->orderBy('ts', 'ASC')
+			->addOrderBy('id', 'ASC')
+			->setMaxResults(max(1, $limit));
+		return $this->findEntities($qb);
+	}
+
+	/**
 	 * Prune old samples, but never the ones a surviving cycle still needs.
 	 *
 	 * A cycle that is still open (or that ended after the cutoff) is deliberately

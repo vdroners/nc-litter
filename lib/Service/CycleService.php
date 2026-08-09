@@ -71,6 +71,7 @@ class CycleService
 		private CommandAuditMapper $audit,
 		private ErrorDecoderService $errors,
 		private NotifyService $notify,
+		private SensorHealthService $sensorHealth,
 		private DeviceService $devices,
 	) {
 	}
@@ -144,7 +145,10 @@ class CycleService
 	{
 		$now = time();
 		$dto = $this->readDto($state);
-		$prev = $this->telemetry->latest($deviceId);
+		// Two samples, not one: the level alerts confirm a condition across both
+		// before notifying (see notifyLevelEdges).
+		$recent = $this->telemetry->newest($deviceId, 2);
+		$prev = $recent[0] ?? null;
 		$open = $this->cycles->findOpenCycle($deviceId);
 
 		// Reap a cycle whose closing sample never arrived.
@@ -191,7 +195,14 @@ class CycleService
 			}
 		}
 
-		$this->notifyLevelEdges($name, $dto, $prev);
+		// Was the last commanded cycle actually carried out? Settled here because
+		// this is the one place that sees every fresh reading of the odometer.
+		$this->devices->settleCommandVerification($deviceId, $state);
+
+		// Judged against the history that now includes this tick's sample, so a
+		// sensor that has just started misbehaving is distrusted immediately.
+		$trust = $this->sensorHealth->forDevice($deviceId, $state)['trust'];
+		$this->notifyLevelEdges($name, $dto, $recent, $trust);
 	}
 
 	/**
@@ -271,6 +282,16 @@ class CycleService
 				'poll_error' => $state['poll_error'] ?? null,
 				'sleep_schedule' => $state['sleep_schedule'] ?? null,
 				'bridge' => $state['bridge'] ?? null,
+				// Per-board and per-sensor registers. Not displayed as state —
+				// recorded so a future fault has healthy-era history to compare
+				// against, and read back by SensorHealthService to spot a frozen
+				// register. When the laser board failed on 2026-08-07 none of
+				// this had ever been stored, so whether `SWITCH_1_SET` was this
+				// unit's resting `pinch_status` could only be settled by
+				// physically reseating the bonnet.
+				'diagnostics' => $state['diagnostics'] ?? null,
+				'litter_sensor_ok' => $state['litter_sensor_ok'] ?? null,
+				'litter_level_raw' => $state['litter_level_raw'] ?? null,
 			],
 		];
 	}
@@ -398,25 +419,52 @@ class CycleService
 
 	/**
 	 * Drawer-full and litter-low notify on the rising edge only, judged against
-	 * the previous stored sample — the sampling job runs in a fresh process each
-	 * tick, so in-memory latches would re-alert forever.
+	 * the stored samples — the sampling job runs in a fresh process each tick, so
+	 * in-memory latches would re-alert forever.
+	 *
+	 * TWO GUARDS, both added after the 2026-08-07 sensor failure:
+	 *
+	 * 1. **Confirmation.** The condition must hold across two consecutive samples,
+	 *    not one. A rising edge is a real rising edge even when the sensor is
+	 *    flapping, which is how four false drawer-full notifications went out
+	 *    between 08-04 and 08-06 while the drawer sensor swung 0 → 100 → 0. The
+	 *    edge is now taken on the *confirmed* condition: it fires when the last
+	 *    two readings agree and the one before them did not.
+	 *
+	 * 2. **Trust.** A sensor the app has already judged unreliable may not raise an
+	 *    alarm about the thing it measures. Telling someone to empty a drawer that
+	 *    is not full is worse than saying nothing, because it teaches them to
+	 *    ignore the alerts — and the suppressed condition is not lost, it surfaces
+	 *    as a sensor fault hint instead, which is the honest description.
 	 *
 	 * @param array<string, mixed> $dto
+	 * @param TelemetrySample[] $recent newest first: [previous, the one before it]
+	 * @param array<string, bool> $trust
 	 */
-	private function notifyLevelEdges(string $name, array $dto, ?TelemetrySample $prev): void
+	private function notifyLevelEdges(string $name, array $dto, array $recent, array $trust): void
 	{
-		$full = $this->isDrawerFull($dto['status'], $dto['drawer']);
-		$wasFull = $prev !== null && $this->isDrawerFull((string) $prev->getStatus(), $prev->getDrawerLevelPct());
-		if ($full && !$wasFull) {
-			$this->notify->drawerFull($name, $dto['drawer']);
+		$prev = $recent[0] ?? null;
+		$before = $recent[1] ?? null;
+
+		if ($trust['drawer'] ?? true) {
+			$full = $this->isDrawerFull($dto['status'], $dto['drawer']);
+			$wasFull = $prev !== null
+				&& $this->isDrawerFull((string) $prev->getStatus(), $prev->getDrawerLevelPct());
+			$beforeFull = $before !== null
+				&& $this->isDrawerFull((string) $before->getStatus(), $before->getDrawerLevelPct());
+			// Confirmed now, and not already confirmed one sample ago.
+			if ($full && $wasFull && !$beforeFull) {
+				$this->notify->drawerFull($name, $dto['drawer']);
+			}
 		}
 
-		$low = $dto['litter'] !== null && $dto['litter'] <= self::LITTER_LOW_PCT;
-		$wasLow = $prev !== null
-			&& $prev->getLitterLevelPct() !== null
-			&& $prev->getLitterLevelPct() <= self::LITTER_LOW_PCT;
-		if ($low && !$wasLow) {
-			$this->notify->litterLow($name, (int) $dto['litter']);
+		if ($trust['litter'] ?? true) {
+			$low = static fn (?int $pct): bool => $pct !== null && $pct <= self::LITTER_LOW_PCT;
+			if ($low($dto['litter'])
+				&& $prev !== null && $low($prev->getLitterLevelPct())
+				&& !($before !== null && $low($before->getLitterLevelPct()))) {
+				$this->notify->litterLow($name, (int) $dto['litter']);
+			}
 		}
 	}
 

@@ -9,9 +9,11 @@ use OCA\NcLitter\Service\AuditService;
 use OCA\NcLitter\Service\DeviceService;
 use OCA\NcLitter\Service\ErrorDecoderService;
 use OCA\NcLitter\Service\MaintenanceHintService;
+use OCA\NcLitter\Service\SensorHealthService;
 use OCA\NcLitter\Tests\Support\FakeAppData;
 use OCA\NcLitter\Tests\Support\FakeBridgeClient;
 use OCA\NcLitter\Tests\Support\FakeCommandAuditMapper;
+use OCA\NcLitter\Tests\Support\FakeTelemetrySampleMapper;
 use OCA\NcLitter\Tests\Support\FakeConfig;
 use OCA\NcLitter\Tests\Support\FakeCrypto;
 use OCA\NcLitter\Tests\Support\FakeDeviceMapper;
@@ -41,6 +43,7 @@ class DeviceServiceTest extends TestCase
 			new AdminSecretCrypto(new FakeCrypto($canDecrypt), new NullLogger()),
 			new ErrorDecoderService(catalogPath('error_codes.json')),
 			new MaintenanceHintService(catalogPath('maintenance_thresholds.json')),
+			new SensorHealthService(new FakeTelemetrySampleMapper()),
 			new AuditService($this->auditRows),
 			new FakeConfig(),
 			new FakeTempManager(),
@@ -457,5 +460,113 @@ class DeviceServiceTest extends TestCase
 		$creds = $svc->getPlainCreds($device);
 		$this->assertNull($creds['error']);
 		$this->assertSame('hunter2', $creds['password']);
+	}
+
+	// ── Did the unit actually do it? ─────────────────────────────────────────
+
+	/**
+	 * The bridge answering `ok` means the cloud accepted the request, not that the
+	 * robot moved. On 2026-08-08 the faulted unit answered `start_cleaning() ->
+	 * True` and then sat perfectly still, odometer unchanged. So a commanded cycle
+	 * arms a check against the odometer.
+	 */
+	public function testACommandedCycleArmsAnOdometerCheck(): void
+	{
+		$svc = $this->service();
+		$this->bridge->withState(['cycles_total' => 1718, 'status' => 'ready']);
+
+		$svc->runAction(1, 'clean', 'admin');
+
+		$pending = $svc->commandVerification(1);
+		$this->assertIsArray($pending);
+		$this->assertSame('clean', $pending['action']);
+		$this->assertSame('pending', $pending['verdict']);
+		$this->assertSame(1718, $pending['odometer'],
+			'the odometer must be read from the DTO, not the request envelope');
+	}
+
+	public function testAnOdometerThatMovesClearsTheCheck(): void
+	{
+		$svc = $this->service();
+		$this->bridge->withState(['cycles_total' => 1718, 'status' => 'ready']);
+		$svc->runAction(1, 'clean', 'admin');
+
+		// The unit cycled: the odometer moved.
+		$svc->settleCommandVerification(1, ['cycles_total' => 1719, 'status' => 'ready']);
+		$this->assertNull($svc->commandVerification(1),
+			'a carried-out command leaves no record to nag about');
+	}
+
+	public function testAnUnmovedOdometerIsReportedOnlyAfterTheGracePeriod(): void
+	{
+		$svc = $this->service();
+		$this->bridge->withState(['cycles_total' => 1718, 'status' => 'ready']);
+		$svc->runAction(1, 'clean', 'admin');
+
+		// Still within grace: the unit may simply not have started turning yet.
+		$svc->settleCommandVerification(1, ['cycles_total' => 1718, 'status' => 'ready']);
+		$this->assertSame('pending', $svc->commandVerification(1)['verdict']);
+
+		// Backdate the arming so the grace period has elapsed.
+		$pending = $svc->commandVerification(1);
+		$pending['at'] -= DeviceService::COMMAND_GRACE_S + 60;
+		$this->writeCommandVerification($svc, $pending);
+
+		$svc->settleCommandVerification(1, ['cycles_total' => 1718, 'status' => 'ready']);
+		$this->assertSame('not_executed', $svc->commandVerification(1)['verdict']);
+	}
+
+	/** A rejected command must not arm anything — nothing was asked of the unit. */
+	public function testAFailedCommandArmsNothing(): void
+	{
+		$svc = $this->service();
+		$this->bridge->withActionEnvelope(FakeBridgeClient::envelope(502, null, 'bridge_down'));
+		$svc->runAction(1, 'clean', 'admin');
+		$this->assertNull($svc->commandVerification(1));
+	}
+
+	/** Settling is a no-op when nothing is armed, so it is cheap on every tick. */
+	public function testSettlingWithNothingArmedDoesNothing(): void
+	{
+		$svc = $this->service();
+		$svc->settleCommandVerification(1, ['cycles_total' => 1718]);
+		$this->assertNull($svc->commandVerification(1));
+	}
+
+	/** @param array<string,mixed> $pending */
+	private function writeCommandVerification(DeviceService $svc, array $pending): void
+	{
+		// Reaches through the same appconfig the service uses; there is no setter,
+		// because nothing but the service should ever write this.
+		$ref = new \ReflectionMethod($svc, 'commandKey');
+		$key = $ref->invoke($svc, 1);
+		$cfg = new \ReflectionProperty($svc, 'config');
+		$cfg->getValue($svc)->setAppValue('nc_litter', $key, json_encode($pending));
+	}
+
+	/**
+	 * Regression: the Alfred alerts endpoint returned HTTP 500 on every install
+	 * that had a log path configured.
+	 *
+	 * `alertLogRoots()` called `getTempBaseDirectory()`, which `OCP\ITempManager`
+	 * does not have — the real name is `getTempBaseDir()`. It went unnoticed
+	 * because the test stub *declared the wrong name too*, so the fake matched the
+	 * stub and the suite was only ever checking itself. This asserts against the
+	 * real interface's method name.
+	 */
+	public function testAlfredAlertsDoesNotBlowUpResolvingItsAllowedRoots(): void
+	{
+		$this->assertTrue(
+			method_exists(\OCP\ITempManager::class, 'getTempBaseDir'),
+			'the stub must mirror the real OCP interface, not invent a signature',
+		);
+		$this->assertFalse(method_exists(\OCP\ITempManager::class, 'getTempBaseDirectory'));
+
+		$svc = $this->service();
+		$svc->setAlfredConfig(['enabled' => true, 'alert_log' => '/tmp/nowhere/litter-alerts.jsonl']);
+
+		// Reaches alertLogRoots(), which is where the bad call lived. An unreadable
+		// path outside every allowed root must yield an empty list, not an exception.
+		$this->assertSame([], $svc->getAlfredAlerts(8));
 	}
 }

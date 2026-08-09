@@ -5,6 +5,7 @@
 			:age-s="ageS"
 			:connected="connected"
 			:stale="stale"
+			:sensor-trust="sensorTrust"
 			@open-drawer="$emit('open-drawer')" />
 
 		<nav class="nc-litter-nav" aria-label="NC Litter sections">
@@ -113,6 +114,11 @@ export default {
 		stale: {
 			type: Boolean,
 			default: false,
+		},
+		/** `sensor_health.trust`, forwarded to the level chips. */
+		sensorTrust: {
+			type: Object,
+			default: () => ({}),
 		},
 		drawerOpen: {
 			type: Boolean,

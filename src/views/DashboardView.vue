@@ -60,7 +60,11 @@
 			:statuses="store.liveStatuses"
 			title="This session" />
 
-		<MaintenanceHints v-if="store.hints && store.hints.length" class="nc-litter-dashboard__wide" :hints="store.hints" />
+		<MaintenanceHints
+			v-if="store.hints && store.hints.length"
+			class="nc-litter-dashboard__wide"
+			:hints="store.hints"
+			:evidence="store.sensorEvidence" />
 
 		<AlfredPanel
 			v-if="store.alfred && store.alfred.enabled"

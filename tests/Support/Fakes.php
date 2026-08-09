@@ -207,6 +207,46 @@ class FakeTelemetrySampleMapper extends TelemetrySampleMapper
 		));
 	}
 
+	/**
+	 * Newest first, mirroring the real mapper's `ts DESC, id DESC`.
+	 *
+	 * @return list<TelemetrySample>
+	 */
+	public function newest(int $deviceId, int $limit = 2): array
+	{
+		$rows = $this->forDevice($deviceId);
+		usort($rows, static function (TelemetrySample $a, TelemetrySample $b): int {
+			return [(int) $b->getTs(), (int) $b->getId()] <=> [(int) $a->getTs(), (int) $a->getId()];
+		});
+		return array_slice($rows, 0, max(1, $limit));
+	}
+
+	/**
+	 * Oldest first from `$sinceTs`, mirroring the real mapper's `ts ASC, id ASC`.
+	 *
+	 * @return list<TelemetrySample>
+	 */
+	public function since(int $deviceId, int $sinceTs, int $limit = 5000): array
+	{
+		$rows = array_values(array_filter(
+			$this->forDevice($deviceId),
+			static fn (TelemetrySample $s) => (int) $s->getTs() >= $sinceTs,
+		));
+		usort($rows, static function (TelemetrySample $a, TelemetrySample $b): int {
+			return [(int) $a->getTs(), (int) $a->getId()] <=> [(int) $b->getTs(), (int) $b->getId()];
+		});
+		return array_slice($rows, 0, max(1, $limit));
+	}
+
+	/** @return list<TelemetrySample> */
+	private function forDevice(int $deviceId): array
+	{
+		return array_values(array_filter(
+			$this->rows,
+			static fn (TelemetrySample $s) => (int) $s->getDeviceId() === $deviceId,
+		));
+	}
+
 	public function latest(int $deviceId): ?TelemetrySample
 	{
 		$rows = array_values(array_filter(
@@ -598,7 +638,7 @@ class FakeTempManager implements \OCP\ITempManager
 	{
 	}
 
-	public function getTempBaseDirectory(): string
+	public function getTempBaseDir()
 	{
 		return $this->base;
 	}

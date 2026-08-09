@@ -60,6 +60,7 @@ import AppShell from '@/components/AppShell.vue'
 import ControlPad from '@/components/ControlPad.vue'
 import LifetimeStats from '@/components/LifetimeStats.vue'
 import StatusHero from '@/components/StatusHero.vue'
+import MaintenanceHints from '@/components/MaintenanceHints.vue'
 import StatusStrip from '@/components/StatusStrip.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import { useDeviceStore } from '@/store/device.js'
@@ -368,5 +369,78 @@ describe('SettingsView', () => {
 
 		await wrapper.find('[data-field="power-confirm"]').trigger('click')
 		expect(api.postAction).toHaveBeenCalledWith('power_off', 1, {})
+	})
+})
+
+describe('sensor trust in the status chips', () => {
+	// A plausible-looking number from a broken sensor is worse than a dash: it
+	// invites action. The drawer sensor that failed in August 2026 read a confident
+	// "100% full" while swinging to 0 and back every few minutes, and the app
+	// dutifully sent four drawer-full notifications on the strength of it.
+	it('shows a percentage while the sensor is trusted', () => {
+		const wrapper = mountWith(StatusStrip, {
+			propsData: {
+				state: stateDto({ drawer_level_pct: 42, litter_level_pct: 70 }),
+				connected: true,
+			},
+		})
+		expect(wrapper.find('[data-field="drawer"]').text()).toContain('42% full')
+		expect(wrapper.find('[data-field="litter"]').text()).toContain('70% left')
+	})
+
+	it('replaces the number with a fault marker when the sensor is distrusted', () => {
+		const wrapper = mountWith(StatusStrip, {
+			propsData: {
+				state: stateDto({ drawer_level_pct: 100, litter_level_pct: 0 }),
+				connected: true,
+				sensorTrust: { drawer: false, litter: false },
+			},
+		})
+		const drawer = wrapper.find('[data-field="drawer"]')
+		expect(drawer.text()).toContain('sensor fault')
+		expect(drawer.text()).not.toContain('100')
+		expect(drawer.classes()).toContain('danger')
+
+		const litter = wrapper.find('[data-field="litter"]')
+		expect(litter.text()).toContain('sensor fault')
+		expect(litter.text()).not.toContain('0%')
+	})
+
+	it('trusts both sensors when no trust map is supplied', () => {
+		// An older bridge, or a fresh install with no history, must behave exactly as
+		// before rather than accusing every sensor of being broken.
+		const wrapper = mountWith(StatusStrip, {
+			propsData: { state: stateDto({ drawer_level_pct: 12 }), connected: true },
+		})
+		expect(wrapper.find('[data-field="drawer"]').text()).toContain('12% full')
+	})
+})
+
+describe('MaintenanceHints evidence', () => {
+	it('lists the measurements behind an advisory', () => {
+		const wrapper = mountWith(MaintenanceHints, {
+			propsData: {
+				hints: [{
+					id: 'drawer_sensor_implausible',
+					severity: 'error',
+					title: 'The waste-drawer sensor is misreporting',
+					detail: 'The drawer level has jumped and back again.',
+					action: 'Check the sensor window.',
+				}],
+				evidence: ['drawer level reversed by 60+ points twice within 5 minutes'],
+			},
+		})
+		const block = wrapper.find('[data-testid="sensor-evidence"]')
+		expect(block.exists()).toBe(true)
+		expect(block.text()).toContain('reversed by 60+ points')
+		// The remedy must read as a remedy, not as the explanation.
+		expect(wrapper.text()).toContain('Check the sensor window.')
+	})
+
+	it('omits the evidence block when there is nothing measured to show', () => {
+		const wrapper = mountWith(MaintenanceHints, {
+			propsData: { hints: [{ id: 'x', title: 'Something', detail: 'else' }] },
+		})
+		expect(wrapper.find('[data-testid="sensor-evidence"]').exists()).toBe(false)
 	})
 })

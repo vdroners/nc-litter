@@ -4,6 +4,7 @@
 		:age-s="store.lastSeenAgeS"
 		:connected="store.connected"
 		:stale="store.stale"
+		:sensor-trust="store.sensorTrust"
 		:drawer-open="store.drawerOpen"
 		:transport="store.transport"
 		:can-admin="store.canAdmin"

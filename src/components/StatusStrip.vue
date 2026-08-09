@@ -9,11 +9,21 @@
 			MOCK
 		</span>
 		<span :class="['nc-litter-chip', `is-${tone}`]" data-field="status">{{ statusText }}</span>
-		<span :class="['nc-litter-chip', drawerLevelClass(drawerPct)]" data-field="drawer">
-			🗑️ {{ drawerLabel(drawerPct) }}
+		<!-- A distrusted sensor shows no number at all. A plausible-looking figure
+		     from a broken sensor is worse than a dash, because it invites action:
+		     the drawer sensor that failed in August read a confident "100% full"
+		     while swinging to 0 and back every few minutes. -->
+		<span
+			:class="['nc-litter-chip', drawerTrusted ? drawerLevelClass(drawerPct) : 'danger']"
+			:title="drawerTrusted ? '' : 'The drawer sensor is reporting impossible values — see Maintenance'"
+			data-field="drawer">
+			🗑️ {{ drawerTrusted ? drawerLabel(drawerPct) : 'sensor fault' }}
 		</span>
-		<span :class="['nc-litter-chip', litterLevelClass(litterPct)]" data-field="litter">
-			🧻 {{ litterLabel(litterPct) }}
+		<span
+			:class="['nc-litter-chip', litterTrusted ? litterLevelClass(litterPct) : 'danger']"
+			:title="litterTrusted ? '' : 'The litter sensor is not responding — see Maintenance'"
+			data-field="litter">
+			🧻 {{ litterTrusted ? litterLabel(litterPct) : 'sensor fault' }}
 		</span>
 		<span v-if="sleeping" class="nc-litter-chip" data-field="sleeping">🌙 Sleeping</span>
 		<span v-if="panelLock" class="nc-litter-chip" data-field="panel-lock">🔒 Locked</span>
@@ -74,6 +84,14 @@ export default {
 			type: Boolean,
 			default: false,
 		},
+		/**
+		 * `sensor_health.trust` from the enriched state. Absent keys mean trusted, so
+		 * an older bridge or a fresh install shows numbers exactly as before.
+		 */
+		sensorTrust: {
+			type: Object,
+			default: () => ({}),
+		},
 	},
 
 	computed: {
@@ -85,6 +103,12 @@ export default {
 		},
 		tone() {
 			return this.state ? statusTone(this.state) : 'idle'
+		},
+		drawerTrusted() {
+			return this.sensorTrust.drawer !== false
+		},
+		litterTrusted() {
+			return this.sensorTrust.litter !== false
 		},
 		drawerPct() {
 			return this.state ? this.state.drawer_level_pct : null

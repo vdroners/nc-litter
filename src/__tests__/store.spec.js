@@ -521,3 +521,35 @@ describe('device store', () => {
 		expect(api.getState).toHaveBeenCalledTimes(1)
 	})
 })
+
+describe('sensor health getters', () => {
+	it('reads the trust map and the evidence off the enriched state', () => {
+		const store = useDeviceStore()
+		store.state = {
+			...stateDto(),
+			sensor_health: {
+				trust: { drawer: false, litter: true },
+				evidence: ['weight_sensor held -1.5 across 96 readings over 8 hours'],
+			},
+		}
+		expect(store.sensorTrust).toEqual({ drawer: false, litter: true })
+		expect(store.sensorEvidence).toHaveLength(1)
+		expect(store.sensorEvidence[0]).toContain('-1.5')
+	})
+
+	it('defaults to trusting everything when the server said nothing', () => {
+		// A fresh install has no history to judge with. Silence must not be read as
+		// an accusation, or every new install would open with two sensor faults.
+		const store = useDeviceStore()
+		store.state = stateDto()
+		expect(store.sensorTrust).toEqual({ drawer: true, litter: true })
+		expect(store.sensorEvidence).toEqual([])
+	})
+
+	it('survives a malformed sensor_health payload', () => {
+		const store = useDeviceStore()
+		store.state = { ...stateDto(), sensor_health: { trust: null, evidence: 'nope' } }
+		expect(store.sensorTrust).toEqual({ drawer: true, litter: true })
+		expect(store.sensorEvidence).toEqual([])
+	})
+})

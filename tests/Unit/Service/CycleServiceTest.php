@@ -12,6 +12,7 @@ use OCA\NcLitter\Service\CycleService;
 use OCA\NcLitter\Service\DeviceService;
 use OCA\NcLitter\Service\ErrorDecoderService;
 use OCA\NcLitter\Service\MaintenanceHintService;
+use OCA\NcLitter\Service\SensorHealthService;
 use OCA\NcLitter\Tests\Support\FakeAppData;
 use OCA\NcLitter\Tests\Support\FakeBridgeClient;
 use OCA\NcLitter\Tests\Support\FakeCommandAuditMapper;
@@ -66,6 +67,7 @@ class CycleServiceTest extends TestCase
 			new AdminSecretCrypto(new FakeCrypto(), new NullLogger()),
 			new ErrorDecoderService(catalogPath('error_codes.json')),
 			new MaintenanceHintService(catalogPath('maintenance_thresholds.json')),
+			new SensorHealthService($this->telemetry),
 			new AuditService($this->audit),
 			new FakeConfig(),
 			new FakeTempManager(),
@@ -79,6 +81,7 @@ class CycleServiceTest extends TestCase
 			$this->audit,
 			new ErrorDecoderService(catalogPath('error_codes.json')),
 			$this->notify,
+			new SensorHealthService($this->telemetry),
 			$devices,
 		);
 	}
@@ -365,31 +368,97 @@ class CycleServiceTest extends TestCase
 
 	// ── Level notifications ──────────────────────────────────────────────────
 
-	/** Rising edge only: the sampler runs in a fresh process, so latches must be in the data. */
-	public function testDrawerFullNotifiesOnceOnTheRisingEdge(): void
+	private function drawerFullCount(): int
 	{
-		$this->ingest(['status' => 'drawer_full', 'status_code' => 'DFS', 'drawer_level_pct' => 99]);
-		$this->assertSame(1, count(array_filter(
+		return count(array_filter(
 			$this->notify->sent,
 			static fn (array $n) => $n['kind'] === 'drawer_full',
-		)));
-
-		$this->ingest(['status' => 'drawer_full', 'status_code' => 'DFS', 'drawer_level_pct' => 99]);
-		$this->assertSame(1, count(array_filter(
-			$this->notify->sent,
-			static fn (array $n) => $n['kind'] === 'drawer_full',
-		)), 'a standing condition must not re-alert every poll');
+		));
 	}
 
-	public function testDrawerFullNotifiesAgainAfterItClears(): void
+	/** @param array<string,mixed> $extra */
+	private function ingestDrawerFull(array $extra = []): void
 	{
-		$this->ingest(['status' => 'drawer_full', 'status_code' => 'DFS', 'drawer_level_pct' => 99]);
+		$this->ingest(['status' => 'drawer_full', 'status_code' => 'DFS', 'drawer_level_pct' => 99] + $extra);
+	}
+
+	/**
+	 * Two samples must agree before the alert goes out.
+	 *
+	 * Rising-edge-only was not enough. A sensor that flaps 0 -> 100 produces a
+	 * genuine rising edge, and between 08-04 and 08-06 the failing drawer sensor
+	 * produced four of them — four "empty the drawer" notifications for a drawer
+	 * that was not full. Confirmation across consecutive samples is what a
+	 * five-minute flap cannot fake.
+	 */
+	public function testDrawerFullNeedsTwoSamplesBeforeItNotifies(): void
+	{
+		$this->ingestDrawerFull();
+		$this->assertSame(0, $this->drawerFullCount(),
+			'one reading is not yet evidence — a single flap must stay silent');
+
+		$this->ingestDrawerFull();
+		$this->assertSame(1, $this->drawerFullCount(), 'confirmed by a second reading, so alert');
+
+		$this->ingestDrawerFull();
+		$this->assertSame(1, $this->drawerFullCount(), 'a standing condition must not re-alert every poll');
+	}
+
+	/** A single spurious reading between two normal ones must never alert. */
+	public function testASingleFlappedReadingDoesNotNotify(): void
+	{
 		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 4]);
-		$this->ingest(['status' => 'drawer_full', 'status_code' => 'DFS', 'drawer_level_pct' => 99]);
-		$this->assertSame(2, count(array_filter(
-			$this->notify->sent,
-			static fn (array $n) => $n['kind'] === 'drawer_full',
-		)));
+		$this->ingestDrawerFull();
+		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 4]);
+		$this->assertSame(0, $this->drawerFullCount());
+	}
+
+	/**
+	 * Emptied, then filled again over the following days: alert a second time.
+	 *
+	 * The refill is stepped rather than instant on purpose. A drawer that reads 99,
+	 * then 4, then 99 again has reversed by 95 points twice, which is the exact
+	 * signature of the sensor that failed on 2026-08-07 — the plausibility layer
+	 * distrusts it and holds the alert back, which is correct. A real drawer fills
+	 * over days, one cycle at a time.
+	 */
+	public function testDrawerFullNotifiesAgainAfterItIsEmptiedAndRefills(): void
+	{
+		$this->ingestDrawerFull();
+		$this->ingestDrawerFull();
+		$this->assertSame(1, $this->drawerFullCount());
+
+		// Emptied by hand: one large drop, in one direction only.
+		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 4]);
+		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 4]);
+		// ...and fills again over the following days.
+		foreach ([40, 62, 80, 93] as $pct) {
+			$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => $pct]);
+		}
+		$this->assertSame(1, $this->drawerFullCount(), 'still below the full threshold');
+
+		$this->ingestDrawerFull();
+		$this->ingestDrawerFull();
+		$this->assertSame(2, $this->drawerFullCount());
+	}
+
+	/**
+	 * The interaction the previous test dances around, asserted head-on.
+	 *
+	 * A drawer cannot empty and refill inside two polls. When the readings claim it
+	 * did, the sensor is flapping and has lost the right to raise an alarm about the
+	 * drawer — the condition is reported as a sensor fault hint instead, which is
+	 * the honest description of what is known.
+	 */
+	public function testAFlappingDrawerSensorIsNotAllowedToNotify(): void
+	{
+		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 2]);
+		$this->ingestDrawerFull(['drawer_level_pct' => 100]);
+		$this->ingest(['status' => 'ready', 'status_code' => 'RDY', 'drawer_level_pct' => 0]);
+		$this->ingestDrawerFull(['drawer_level_pct' => 100]);
+		$this->ingestDrawerFull(['drawer_level_pct' => 100]);
+		$this->assertSame(0, $this->drawerFullCount(),
+			'a sensor swinging 0 <-> 100 must not drive a drawer-full notification');
 	}
 
 	public function testLitterLowNotifiesOnTheRisingEdgeOnly(): void

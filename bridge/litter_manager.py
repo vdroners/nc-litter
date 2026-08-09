@@ -75,6 +75,10 @@ class LitterManager:
         self.last_poll_ok_at: str | None = None
         self.poll_error: str | None = None
         self._poll_failures: int = 0
+        # Per-board firmware targets, fetched separately from the state poll.
+        self._firmware_details: dict[str, Any] | None = None
+        self._firmware_error: str | None = None
+        self._firmware_checked_at: float = 0.0
 
         # In-memory normalized DTO + change notification.
         self._state: dict[str, Any] = {}
@@ -154,7 +158,42 @@ class LitterManager:
         if callable(refresh):
             await refresh()
         self._note_poll_success()
+        await self._maybe_refresh_firmware_details()
         self._set_state(normalizer.normalize(self._robot, self._meta()))
+
+    async def _maybe_refresh_firmware_details(self) -> None:
+        """Cache the per-board firmware targets, refreshed at most hourly.
+
+        A separate API round-trip from the state poll, and firmware targets change
+        on the order of months, so polling it every ``refresh_s`` would be pure
+        waste. It is worth having at all because the target is what makes a board
+        reporting ``0.0.0.0`` legible: without it there is no way to tell an
+        unprogrammed board from one running an old-but-valid version.
+
+        Never allowed to break the poll loop -- a missing target degrades the
+        diagnosis, whereas a raised exception would stop telemetry entirely.
+        """
+        if self._robot is None:
+            return
+        now = time.monotonic()
+        if self._firmware_details is not None \
+                and now - self._firmware_checked_at < FIRMWARE_DETAILS_TTL_S:
+            return
+        getter = getattr(self._robot, "get_firmware_details", None)
+        if not callable(getter):
+            return
+        try:
+            details = await getter()
+        except Exception as exc:  # noqa: BLE001
+            # Recorded rather than logged (this module has no logger) and never
+            # re-raised: the targets are a diagnostic nicety, telemetry is not.
+            self._firmware_error = _exc_text(exc)
+            self._firmware_checked_at = now  # back off a full TTL, not one poll
+            return
+        self._firmware_error = None
+        if isinstance(details, dict):
+            self._firmware_details = details
+        self._firmware_checked_at = now
 
     def _note_poll_success(self) -> None:
         self.error = None
@@ -185,6 +224,7 @@ class LitterManager:
             "bridge_version": self.version,
             "uptime_s": int(time.monotonic() - self._start_monotonic),
             "updated_at": _now_iso(),
+            "firmware_details": self._firmware_details,
             **self._freshness_meta(),
         }
 
@@ -726,6 +766,10 @@ DEFAULT_VALID_WAIT_TIMES: tuple[int, ...] = (3, 7, 15, 25, 30)
 
 # Consecutive failed polls before the bridge stops reporting itself connected.
 MAX_POLL_FAILURES = 3
+
+# How long the per-board firmware targets stay cached. They are a separate API
+# round-trip and change on the order of months, so an hour is generous.
+FIRMWARE_DETAILS_TTL_S = 3600.0
 
 # Delays (seconds, cumulative) for the re-polls fired after a write. The Whisker
 # cloud does not reflect a command immediately -- measured at well over 30s on a

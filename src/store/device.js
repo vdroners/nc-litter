@@ -132,6 +132,29 @@ export const useDeviceStore = defineStore('device', {
 		fault: (state) => hasFault(state.state),
 		decodedError: (state) => decoratedError(state.state),
 		hints: (state) => (state.state && state.state.maintenance_hints) || [],
+		/**
+		 * The measurements behind a sensor advisory, e.g. "drawer level reversed by
+		 * 60+ points twice within 5 minutes". Shown so an advisory can be checked
+		 * rather than taken on faith.
+		 * @returns {string[]}
+		 */
+		sensorEvidence: (state) => {
+			const health = state.state && state.state.sensor_health
+			return (health && Array.isArray(health.evidence)) ? health.evidence : []
+		},
+		/**
+		 * Which sensors the server still believes. A reading from a distrusted
+		 * sensor must not be shown as a fact — a plausible-looking number from a
+		 * broken sensor is worse than no number, because it invites action.
+		 * @returns {{drawer: boolean, litter: boolean}}
+		 */
+		sensorTrust: (state) => {
+			const trust = (state.state && state.state.sensor_health && state.state.sensor_health.trust) || {}
+			return {
+				drawer: trust.drawer !== false,
+				litter: trust.litter !== false,
+			}
+		},
 		status: (state) => statusKey(state.state),
 		/** @returns {number|null} waste-drawer fill percent */
 		drawerPct: (state) => numberOrNull(state.state && state.state.drawer_level_pct),

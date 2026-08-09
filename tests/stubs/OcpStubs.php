@@ -224,7 +224,12 @@ namespace OCP;
 
 interface ITempManager
 {
-	public function getTempBaseDirectory(): string;
+	// Named exactly as OCP\ITempManager names it. It was `getTempBaseDirectory()`
+	// here, which Nextcloud has never had -- so the fake matched the stub, the
+	// suite went green, and the one code path that calls it 500'd in production
+	// for every install with the Alfred alert log configured. A stub that invents
+	// a signature does not test the integration, it tests itself.
+	public function getTempBaseDir();
 }
 
 namespace OCP\Files;

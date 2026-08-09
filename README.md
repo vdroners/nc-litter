@@ -1,6 +1,6 @@
 # NC Litter
 
-![version](https://img.shields.io/badge/version-0.3.2-D8A45E)
+![version](https://img.shields.io/badge/version-0.4.0-D8A45E)
 ![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-1a1a1c)
 [![GitHub](https://img.shields.io/badge/github-vdroners%2Fnc--litter-181717?logo=github)](https://github.com/vdroners/nc-litter)
 
@@ -28,9 +28,49 @@ Tested on a **Litter-Robot 4** against **Nextcloud 34 / PHP 8.5**.
 - Cycle history with a phase timeline, CSV/JSON export, and lifetime stats
 - 22 cat-themed achievements
 - Error decoder + maintenance hints + a connection-health drawer
+- **Sensor health** — judges each reading against the ones around it, so a failing
+  sensor is reported as a failing sensor rather than believed. See below.
 - Nextcloud Notifications + Activity
 - Optional **Alfred** (OpenClaw) Talk integration: `@alfred litter status |
   clean | reset | light-on | light-off | lock | unlock | help`
+
+## Sensor health
+
+Added in 0.4.0, after this unit's laser (time-of-flight) board failed on
+2026-08-07. The app had been sampling every five minutes throughout and recorded
+four days of unmistakable warning signs **without raising one of them** — the
+drawer sensor swinging 0 % → 100 % → 0 % inside single intervals, then the litter
+sensor going silent and the app announcing "litter critically low" for a box that
+had just been filled. Every reading looked like a number, so it was used as one.
+
+`SensorHealthService` supplies the missing judgement:
+
+| Detector | Fires on | Validated by |
+|---|---|---|
+| `drawer_sensor_implausible` | two opposing 60-point drawer transitions within 6 h | backtest: fires 08-04/05/06, silent 07-27→08-03 |
+| `cycle_activity_stalled` | no completed cycle for 36 h (72 h → error) | backtest: threshold clears the measured 29.3 h healthy maximum |
+| `laser_board_unprogrammed` | board firmware reads `0.0.0.0` | live faulted unit |
+| `firmware_backend_contradiction` | version ≠ vendor target while the vendor says "no update needed" | live faulted unit |
+| `weight_sensor_frozen` / `drawer_distance_frozen` | register bit-identical for 6 h, across ≥ 24 samples, through ≥ 1 cycle | unit tests only — these registers are new, so there is no history to backtest |
+| `self_test_stuck` | a start-up display code held for an hour | unit tests only, as above |
+| `command_not_executed` | a cycle acknowledged but the odometer never moved | unit tests |
+
+Two things worth knowing about how these were chosen:
+
+- **Thresholds were measured, not guessed.** `tests/fixtures/real-telemetry-2026-08.csv`
+  is 2655 real samples spanning a healthy week and the failure, and
+  `SensorHealthBacktestTest` replays them. The most important assertion in the
+  suite is that **nothing fires during the healthy week** — an app that cries wolf
+  on a healthy unit is how the real signal came to be ignored.
+- **Two obvious detectors were built and then discarded** because the replay caught
+  them false-positiving: a litter-rise check (the level legitimately wanders ±20
+  points a day as the cat digs) and a bare large-drawer-jump check (emptying the
+  drawer really does produce a 100 → 0 drop — only a *reversal* is impossible).
+
+Consequences elsewhere: level notifications now need the condition to hold across
+two consecutive samples and are suppressed for a sensor already known to be
+unreliable, and the level chips show `sensor fault` instead of a number rather than
+presenting a broken sensor's output as fact.
 
 ## What the LR4 genuinely cannot do
 
@@ -110,9 +150,10 @@ response.
 
 ```bash
 make gate-preflight   # layout + version sync + secret hygiene, then all suites
-npx vitest run                                   # 106 frontend tests
-cd bridge && python3 -m pytest test -q           # 33 (contract tests skip: no pylitterbot on host)
-docker exec nc_litter_bridge python3 -m pytest /app/test -q   # 41, incl. the pylitterbot contract
+vendor/bin/phpunit                               # 136 backend tests, incl. the backtest
+npx vitest run                                   # 116 frontend tests
+cd bridge && python3 -m pytest test -q           # 44 (contract tests skip: no pylitterbot on host)
+docker exec nc_litter_bridge python3 -m pytest /app/test -q   # 44, incl. the pylitterbot contract
 bash tools/litter-live-gates.sh                  # against the real device
 ```
 

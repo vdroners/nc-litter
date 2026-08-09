@@ -36,6 +36,8 @@ EXPECTED_DTO_KEYS = {
     "power_on", "power_type", "wait_time",
     "hopper_status", "hopper_removed", "wifi_mode",
     "error", "error_label", "capabilities", "bridge",
+    # Diagnostic registers, recorded rather than displayed -- see _diagnostics().
+    "diagnostics",
 }
 
 
@@ -296,3 +298,148 @@ def test_a_believable_level_is_still_reported_normally():
     # reports 0 and a brimming one reports 100.
     for edge in (0, 100):
         assert normalizer.normalize(_sample_raw(litter_level=edge))["litter_sensor_ok"] is True, edge
+
+
+# ── Diagnostic registers ────────────────────────────────────────────────────
+#
+# These exist because the laser board failed on 2026-08-07 and there was no
+# healthy-era history for any of them. `_raw` reads them off the device payload
+# because pylitterbot exposes no property for most of them.
+
+class _FakeRobot:
+    """Stands in for a pylitterbot LitterRobot4: real fields live in ``_data``."""
+
+    def __init__(self, data):
+        self._data = data
+        self.status_code = "RDY"
+        self.is_online = True
+
+
+def test_diagnostics_are_read_from_the_raw_device_payload():
+    r = _FakeRobot({
+        "displayCode": "DCX_LAMP_TEST",
+        "pinchStatus": "SWITCH_1_SET",
+        "weightSensor": -1.5,
+        "DFILevelMM": 77,
+        "globeMotorFaultStatus": "FAULT_CLEAR",
+        "globeMotorRetractFaultStatus": "FAULT_CLEAR",
+        "USBFaultStatus": "CLEAR",
+        "isLaserDirty": False,
+        "espFirmware": "1.1.84",
+        "picFirmwareVersion": "10512.3072.2.93",
+        "laserBoardFirmwareVersion": "0.0.0.0",
+    })
+    d = normalizer.normalize(r)["diagnostics"]
+    # This is the real faulted unit's payload, field for field.
+    assert d["display_code"] == "DCX_LAMP_TEST"
+    assert d["pinch_status"] == "SWITCH_1_SET"
+    assert d["weight_sensor"] == -1.5
+    assert d["dfi_level_mm"] == 77
+    assert d["globe_motor_fault"] == "FAULT_CLEAR"
+    assert d["usb_fault"] == "CLEAR"
+    assert d["laser_dirty"] is False
+    assert d["firmware"] == {"esp": "1.1.84", "pic": "10512.3072.2.93",
+                             "laser_board": "0.0.0.0"}
+
+
+def test_an_all_zero_laser_board_version_is_not_a_version():
+    """0.0.0.0 means the board never answered -- the 2026-08-07 failure."""
+    def ok(version):
+        return normalizer.normalize(
+            _FakeRobot({"laserBoardFirmwareVersion": version})
+        )["diagnostics"]["laser_board_ok"]
+
+    assert ok("0.0.0.0") is False
+    assert ok("0.0.00") is False              # "00" != "0" as a string
+    assert ok("0.0.00 (Production)") is False  # the Hex field's spelling
+    assert ok("0") is False
+    assert ok("5.0.2.1") is True        # the version this board should report
+    assert ok("1.1.84") is True
+    # Absent is "unknown", which is a different claim from "bad": an older
+    # firmware or a mocked device reports nothing and must not read as a fault.
+    assert ok(None) is None
+    assert ok("") is None
+    assert ok("   ") is None
+    assert ok("Production") is None    # unparseable is unknown, not a fault
+
+
+def test_diagnostics_are_all_null_when_the_source_has_no_raw_payload():
+    # A dict source (mock mode, seed DTO) carries no camelCase device registers.
+    # Every field must be null rather than absent -- consumers read the keys.
+    d = normalizer.normalize({"status_code": "RDY"})["diagnostics"]
+    assert d["display_code"] is None
+    assert d["weight_sensor"] is None
+    assert d["laser_board_ok"] is None
+    assert d["firmware"] == {"esp": None, "pic": None, "laser_board": None}
+
+
+def test_diagnostics_never_raise_on_a_hostile_payload():
+    r = _FakeRobot({"weightSensor": "not-a-number", "DFILevelMM": None,
+                    "displayCode": 42, "laserBoardFirmwareVersion": 0})
+    d = normalizer.normalize(r)["diagnostics"]
+    assert d["weight_sensor"] is None
+    assert d["dfi_level_mm"] is None
+    assert d["display_code"] == "42"
+    assert d["laser_board_ok"] is False
+
+
+def test_the_whisker_backend_contradiction_is_named():
+    """Reported != target while the backend insists no update is needed.
+
+    Exactly what the real unit reported on 2026-08-08. It is the reason a forced
+    reflash -- the only lever that separates a blank flash from a dead board -- is
+    refused, so the app names it rather than leaving it to be rediscovered.
+    """
+    details = {
+        "isLaserboardFirmwareUpdateNeeded": False,
+        "latestFirmware": {"laserBoardFirmwareVersion": "5.0.2.1"},
+    }
+    d = normalizer.normalize(
+        _FakeRobot({"laserBoardFirmwareVersion": "0.0.0.0"}),
+        {"firmware_details": details},
+    )["diagnostics"]
+    assert d["laser_board_target"] == "5.0.2.1"
+    assert d["backend_update_needed"] is False
+    assert d["backend_contradiction"] is True
+    assert d["laser_board_ok"] is False
+
+
+def test_no_contradiction_when_the_board_matches_its_target():
+    details = {
+        "isLaserboardFirmwareUpdateNeeded": False,
+        "latestFirmware": {"laserBoardFirmwareVersion": "5.0.2.1"},
+    }
+    d = normalizer.normalize(
+        _FakeRobot({"laserBoardFirmwareVersion": "5.0.2.1"}),
+        {"firmware_details": details},
+    )["diagnostics"]
+    assert d["backend_contradiction"] is False
+    assert d["laser_board_ok"] is True
+
+
+def test_an_honestly_pending_update_is_not_a_contradiction():
+    # Behind the target but the backend agrees an update is due -- that is the
+    # system working, not a bug, and must not be reported as one.
+    details = {
+        "isLaserboardFirmwareUpdateNeeded": True,
+        "latestFirmware": {"laserBoardFirmwareVersion": "5.0.2.1"},
+    }
+    d = normalizer.normalize(
+        _FakeRobot({"laserBoardFirmwareVersion": "4.9.0.0"}),
+        {"firmware_details": details},
+    )["diagnostics"]
+    assert d["backend_contradiction"] is False
+    assert d["laser_board_ok"] is True
+
+
+def test_firmware_health_is_unknown_without_the_details_call():
+    # The details fetch is cached hourly and allowed to fail; when it has not
+    # succeeded yet every derived field must be null, never a false accusation.
+    for meta in ({}, {"firmware_details": None}, {"firmware_details": "nope"}):
+        d = normalizer.normalize(_FakeRobot({"laserBoardFirmwareVersion": "0.0.0.0"}), meta)
+        diag = d["diagnostics"]
+        assert diag["laser_board_target"] is None
+        assert diag["backend_update_needed"] is None
+        assert diag["backend_contradiction"] is None
+        # The board itself is still judged -- that needs no backend help.
+        assert diag["laser_board_ok"] is False
