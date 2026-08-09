@@ -67,6 +67,25 @@ it was used as one. Full hardware evidence in
   `OCP\ITempManager` directly. Found by reading the browser console after deploy,
   not by the suite.
 
+- Three test-harness defects that all shared one shape — the thing meant to verify
+  against reality had quietly stopped doing so:
+  - `make bridge-test` preferred a host `pytest` when one existed. The host has no
+    `pylitterbot`, so the eight contract tests skipped while the target reported a
+    confident "44 passed, 1 skipped". It now runs in the bridge image, where the
+    library actually is, and reports 52. `make bridge-test-host` remains for a fast
+    loop and says out loud what it is not covering.
+  - Live gate **G2q** ran `pytest /app/test` inside the bridge container, which only
+    worked if someone had hand-copied the tests in — the Dockerfile ships app code
+    only, deliberately. It now stages them for the run and removes them afterwards,
+    leaving the runtime container as it found it.
+  - Live gate **G2g** demanded `last_poll_ok_at` be identical across two reads two
+    seconds apart, which a genuine upstream poll is entitled to break: roughly a 7%
+    spurious failure at `LITTER_REFRESH_S=30`. Reformulated over three fast reads,
+    which still proves `updated_at` is a read stamp and `last_poll_ok_at` is not.
+    Verified across six consecutive runs.
+- `litter-live-gates.sh` resolves the repo root from its own path instead of the
+  caller's working directory.
+
 ### Notes
 
 - Two detectors that seemed obvious were **built, backtested and discarded**

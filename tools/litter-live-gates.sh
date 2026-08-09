@@ -17,6 +17,9 @@ set -uo pipefail
 
 BASE="${BRIDGE_URL:-http://127.0.0.1:18793}"
 CONTAINER="${LITTER_BRIDGE_CONTAINER:-nc_litter_bridge}"
+# Repo root, resolved from this script rather than the caller's cwd -- an earlier
+# gate run failed purely because it was invoked from the wrong directory.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -153,16 +156,50 @@ fi
 # G2g  freshness signals. updated_at is stamped on every read and can never
 #      detect staleness; last_poll_ok_at is the honest signal.
 # ---------------------------------------------------------------------------
-first="$(python3 -c 'import json,sys;s=json.load(open(sys.argv[1]))["state"];print(s["updated_at"], s["last_poll_ok_at"])' "$TMP/state.json" 2>/dev/null || true)"
-sleep 2
-curl -sS -m 10 "$BASE/state" -o "$TMP/state2.json" 2>/dev/null || true
-second="$(python3 -c 'import json,sys;s=json.load(open(sys.argv[1]))["state"];print(s["updated_at"], s["last_poll_ok_at"])' "$TMP/state2.json" 2>/dev/null || true)"
-if [[ "${first%% *}" != "${second%% *}" && "${first##* }" == "${second##* }" ]]; then
-	pass "G2g updated_at advances per read while last_poll_ok_at holds (real staleness signal)"
-elif [[ "$mock" == "True" || "$mock" == "true" ]]; then
-	pass "G2g freshness fields present (mock re-polls every tick)"
+# Three fast reads, not two reads two seconds apart. The old form demanded that
+# last_poll_ok_at be *identical* across a 2 s gap -- something a genuine upstream
+# poll is entitled to break. With LITTER_REFRESH_S=30 that is roughly a 7% spurious
+# failure rate, and a gate that cries wolf is a gate nobody believes. Across three
+# reads a few hundred milliseconds apart at most one poll can intervene, so the
+# invariant still holds: updated_at moves every time, last_poll_ok_at does not.
+for i in 1 2 3; do
+	curl -sS -m 10 "$BASE/state" -o "$TMP/fresh$i.json" 2>/dev/null || true
+	[[ $i -lt 3 ]] && sleep 0.3
+done
+if python3 - "$TMP/fresh1.json" "$TMP/fresh2.json" "$TMP/fresh3.json" <<'PY'
+import json, sys
+
+reads = []
+for path in sys.argv[1:]:
+    s = json.load(open(path))["state"]
+    reads.append((s["updated_at"], s["last_poll_ok_at"]))
+
+stamps = [r[0] for r in reads]
+polls = [r[1] for r in reads]
+
+# updated_at is stamped on every read, so it must differ every time. That is the
+# claim that matters: it can never be used to detect staleness.
+if len(set(stamps)) != len(stamps):
+    print(f"     updated_at repeated across reads: {stamps}")
+    sys.exit(1)
+
+# last_poll_ok_at tracks successful upstream polls, so it must not move merely
+# because we read. One real poll may land mid-run; two cannot in ~600 ms, so at
+# least one consecutive pair has to match.
+if not any(polls[i] == polls[i + 1] for i in range(len(polls) - 1)):
+    print(f"     last_poll_ok_at moved on every read: {polls}")
+    sys.exit(1)
+
+# And a poll can never be stamped later than the read that reported it.
+if any(p > u for u, p in reads):
+    print(f"     last_poll_ok_at is ahead of updated_at: {reads}")
+    sys.exit(1)
+sys.exit(0)
+PY
+then
+	pass "G2g updated_at advances per read while last_poll_ok_at tracks polls (real staleness signal)"
 else
-	bad "G2g freshness: updated_at/last_poll_ok_at did not behave as expected ($first | $second)"
+	bad "G2g freshness signals did not behave as expected"
 fi
 
 # ---------------------------------------------------------------------------
@@ -277,10 +314,27 @@ fi
 # ---------------------------------------------------------------------------
 if docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
 	pass "G2p bridge container running"
-	if docker exec "$CONTAINER" python3 -m pytest /app/test -q >"$TMP/pytest.txt" 2>&1; then
-		pass "G2q in-image pytest green ($(tail -1 "$TMP/pytest.txt"))"
+
+	# Run the repo's tests against the image's real pylitterbot.
+	#
+	# This used to `docker exec … pytest /app/test`, which only ever worked when
+	# somebody had hand-copied the tests into the running container -- the
+	# Dockerfile ships app code only, on purpose. So the gate passed or failed
+	# depending on an undocumented manual step, and reported "no tests ran" as a
+	# failure of the app rather than of itself. Copy them in for the run and take
+	# them back out, so the gate is self-sufficient either way.
+	if docker cp "$ROOT/bridge/test/." "$CONTAINER:/app/test/" >/dev/null 2>&1; then
+		if docker exec "$CONTAINER" python3 -m pytest /app/test -q >"$TMP/pytest.txt" 2>&1; then
+			pass "G2q in-image pytest green ($(tail -1 "$TMP/pytest.txt"))"
+		else
+			bad "G2q in-image pytest: $(tail -3 "$TMP/pytest.txt")"
+		fi
+		# Leave the runtime container as we found it: app code only.
+		docker exec "$CONTAINER" python3 -c \
+			"import shutil,pathlib; p=pathlib.Path('/app/test'); shutil.rmtree(p, ignore_errors=True)" \
+			>/dev/null 2>&1 || true
 	else
-		bad "G2q in-image pytest: $(tail -3 "$TMP/pytest.txt")"
+		bad "G2q could not stage the bridge tests into '$CONTAINER'"
 	fi
 else
 	bad "G2p bridge container '$CONTAINER' not running"

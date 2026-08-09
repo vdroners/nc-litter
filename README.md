@@ -30,6 +30,9 @@ Tested on a **Litter-Robot 4** against **Nextcloud 34 / PHP 8.5**.
 - Error decoder + maintenance hints + a connection-health drawer
 - **Sensor health** — judges each reading against the ones around it, so a failing
   sensor is reported as a failing sensor rather than believed. See below.
+- **Commands are verified, not assumed** — a commanded cycle is checked against the
+  device's odometer, because the cloud accepting a request is not the robot acting
+  on it
 - Nextcloud Notifications + Activity
 - Optional **Alfred** (OpenClaw) Talk integration: `@alfred litter status |
   clean | reset | light-on | light-off | lock | unlock | help`
@@ -43,7 +46,8 @@ drawer sensor swinging 0 % → 100 % → 0 % inside single intervals, then the l
 sensor going silent and the app announcing "litter critically low" for a box that
 had just been filled. Every reading looked like a number, so it was used as one.
 
-`SensorHealthService` supplies the missing judgement:
+`SensorHealthService` supplies the missing judgement, feeding 15 advisory rules
+in `knowledge/maintenance_thresholds.json`:
 
 | Detector | Fires on | Validated by |
 |---|---|---|
@@ -104,7 +108,7 @@ Browser ──► Nextcloud (nc_litter PHP + Vue)
          Litter-Robot 4
 ```
 
-- Nextcloud app (`nc_litter`) — Vue 2.7 + Pinia + PHP 8.1+
+- Nextcloud app (`nc_litter`) — Vue 2.7 + Pinia + PHP 8.1+ (suites run on 8.3 and 8.5)
 - Sidecar `nc-litter-bridge` — Python + [pylitterbot](https://github.com/natekspencer/pylitterbot)
 - Deploy target: `cloud_app` → `/var/www/html/custom_apps/nc_litter`
 
@@ -150,16 +154,30 @@ response.
 
 ```bash
 make gate-preflight   # layout + version sync + secret hygiene, then all suites
-vendor/bin/phpunit                               # 136 backend tests, incl. the backtest
+vendor/bin/phpunit                               # 137 backend tests, incl. the backtest
 npx vitest run                                   # 116 frontend tests
-cd bridge && python3 -m pytest test -q           # 44 (contract tests skip: no pylitterbot on host)
-docker exec nc_litter_bridge python3 -m pytest /app/test -q   # 44, incl. the pylitterbot contract
+make bridge-test                                 # 52 bridge tests, in the image (real pylitterbot)
+make bridge-test-host                            # 44, fast inner loop — 8 contract tests SKIP
 bash tools/litter-live-gates.sh                  # against the real device
 ```
 
+`make bridge-test` runs inside the bridge image, the only environment with
+`pylitterbot` installed, which is what makes the contract tests real. It used to
+prefer a host `pytest` when one was present — and the host has no `pylitterbot`, so
+those eight tests skipped while the target reported a confident pass. Fixed in
+0.4.0. `make bridge-test-host` is still there for speed and says out loud what it
+is not covering.
+
+Note the running `nc_litter_bridge` container is *not* a shortcut: its Dockerfile
+ships app code only (`COPY app.py litter_manager.py normalizer.py`), so
+`docker exec … pytest /app/test` finds nothing unless tests were copied in by hand.
+
 The bridge contract tests are the important ones: they bind to the *installed*
 `pylitterbot` rather than a test double. A fake robot that implemented
-`set_sleep_mode` is exactly how a permanently-broken Sleep button shipped.
+`set_sleep_mode` is exactly how a permanently-broken Sleep button shipped — and a
+stub that invented `getTempBaseDirectory()` is how an endpoint that returned HTTP
+500 in production stayed green in CI. A double that does not mirror the real thing
+tests only itself.
 
 ## Docs
 
@@ -168,6 +186,8 @@ The bridge contract tests are the important ones: they bind to the *installed*
 - Install (stranger / GHCR bridge): [`docs/INSTALL.md`](docs/INSTALL.md)
 - Architecture: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - Alfred ops plan (v0.3): [`docs/plans/nc-litter-v0.3-alfred-ops.md`](docs/plans/nc-litter-v0.3-alfred-ops.md)
+- Sensor-health plan (v0.4): [`docs/plans/sensor-health-and-diagnostics.md`](docs/plans/sensor-health-and-diagnostics.md)
+- **LR4 laser-board failure (2026-08)**: [`docs/lr4-laser-board-failure-2026-08.md`](docs/lr4-laser-board-failure-2026-08.md) — the hardware diagnosis this app's telemetry produced, written to hand to Whisker support
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 - Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 

@@ -4,9 +4,12 @@ CONTAINER ?= cloud_app
 REMOTE := /var/www/html/custom_apps/$(APP_ID)
 BRIDGE_COMPOSE := docker compose -f "$(ROOT)docker-compose.bridge.yml"
 BRIDGE_NET := nc-litter-net
+# The bridge image is the only place pylitterbot is installed, so it is where the
+# bridge contract tests have to run. Kept in step with docker-compose.bridge.yml.
+BRIDGE_IMAGE ?= ghcr.io/vdroners/nc-litter-bridge:latest
 DATE ?= $(shell date +%F)
 
-.PHONY: build test deploy ship bridge-up bridge-down bridge-test bridge-net-check \
+.PHONY: build test deploy ship bridge-up bridge-down bridge-test bridge-test-host bridge-net-check \
 	bump-patch bump-minor gate-preflight gate-live gate-gui \
 	phpunit run-phpunit appstore appstore-sign
 
@@ -80,12 +83,26 @@ bridge-net-check:
 bridge-down:
 	$(BRIDGE_COMPOSE) down
 
-# Python bridge tests (pytest, pylitterbot mocked). Runs in the bridge image so
-# the host needs no Python deps.
+# Python bridge tests. Runs in the BRIDGE image, which is the only environment
+# with pylitterbot installed.
+#
+# It used to prefer a host pytest when one existed, falling back to a container.
+# That silently defeated the point: the host has no pylitterbot, so the eight
+# contract tests -- the ones that bind to the real library instead of a double --
+# were skipped, and `make bridge-test` reported a confident "44 passed, 1 skipped"
+# while never checking the integration it exists to check. Same shape as the test
+# stub that invented `getTempBaseDirectory()`: the thing meant to verify against
+# reality quietly stopped doing so.
+#
+# `bridge-test-host` is still available for a fast inner loop; it prints what it
+# is not covering.
 bridge-test:
-	cd "$(ROOT)bridge" && ( command -v pytest >/dev/null 2>&1 && pytest -q \
-		|| docker run --rm -v "$(ROOT)bridge:/app" -w /app python:3.12-slim \
-			sh -c "pip install -q -r requirements.txt pytest && pytest -q" )
+	docker run --rm -v "$(ROOT)bridge:/src:ro" -w /src \
+		$(BRIDGE_IMAGE) sh -c "pip install -q pytest 2>/dev/null; python -m pytest -q test"
+
+bridge-test-host:
+	@echo "note: host run — the pylitterbot contract tests will SKIP. Use 'make bridge-test' for those."
+	cd "$(ROOT)bridge" && python3 -m pytest test -q
 
 run-phpunit:
 	@if [ -f "$(ROOT)vendor/bin/phpunit" ] && command -v php >/dev/null 2>&1; then \
