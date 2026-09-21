@@ -32,7 +32,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from litter_manager import ALLOWED_ACTIONS, LitterManager
 
-BRIDGE_VERSION = os.environ.get("BRIDGE_VERSION", "0.1.0")
+# Default must stay in lockstep with appinfo/info.xml — `make bump-*` rewrites it.
+BRIDGE_VERSION = os.environ.get("BRIDGE_VERSION", "0.4.2")
 
 manager = LitterManager(os.environ, version=BRIDGE_VERSION)
 

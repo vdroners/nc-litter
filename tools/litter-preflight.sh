@@ -116,15 +116,19 @@ else
 	bad "G0d version drift: info.xml=$v_xml package.json=$v_pkg package-lock.json=$v_lock"
 fi
 
-# The bridge reports its own version over /health; keep it pinned to the app.
-v_bridge=$(grep -oE 'BRIDGE_VERSION[[:space:]]*=[[:space:]]*"[0-9.]+"' "$ROOT/bridge/app.py" 2>/dev/null \
+# The bridge reports its own version over /health. The Python default, the
+# compose default, and the Dockerfile ARG must all match info.xml. A missing
+# literal used to pass — that hid the stale "0.1.0" default.
+v_bridge=$(grep -oE 'BRIDGE_VERSION", "[0-9]+\.[0-9]+\.[0-9]+"' "$ROOT/bridge/app.py" 2>/dev/null \
 	| grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-if [[ -z "$v_bridge" ]]; then
-	pass "G0e bridge takes its version from the environment (no hardcoded literal)"
-elif [[ "$v_bridge" == "$v_xml" ]]; then
-	pass "G0e bridge version literal matches ($v_bridge)"
+v_compose=$(grep -oE 'BRIDGE_VERSION:-([0-9]+\.[0-9]+\.[0-9]+)' "$ROOT/docker-compose.bridge.yml" 2>/dev/null \
+	| grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+v_docker=$(grep -oE 'ARG BRIDGE_VERSION=[0-9]+\.[0-9]+\.[0-9]+' "$ROOT/bridge/Dockerfile" 2>/dev/null \
+	| grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+if [[ "$v_bridge" == "$v_xml" && "$v_compose" == "$v_xml" && "$v_docker" == "$v_xml" ]]; then
+	pass "G0e bridge version defaults match app ($v_xml)"
 else
-	bad "G0e bridge version literal $v_bridge != app $v_xml"
+	bad "G0e bridge version drift: app=$v_xml python=$v_bridge compose=$v_compose dockerfile=$v_docker"
 fi
 
 # ---------------------------------------------------------------------------

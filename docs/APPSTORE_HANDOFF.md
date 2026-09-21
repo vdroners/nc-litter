@@ -9,7 +9,7 @@ Status after the five-app readiness pass (2026-08-03). Agent work is pushed to G
 | `nc_print` | **1.60.13** | https://github.com/vdroners/nc-print | CSRF hardened; slicer GHCR workflow stub; PHP max dropped for NC34 |
 | `nc_wireguard` | **2.3.2** | https://github.com/vdroners/nc-wireguard | External wg-easy; CSRF on settings save |
 | `nc_roomba` | **0.12.1** | https://github.com/vdroners/nc-roomba | Uninstall cleanup; bridge GHCR workflow |
-| `nc_litter` | **0.4.1** | https://github.com/vdroners/nc-litter | Sensor-health detectors + Whisker privacy note; bridge GHCR workflow |
+| `nc_litter` | **0.4.2** | https://github.com/vdroners/nc-litter | Bridge version tracks the app; sensor-health detectors |
 | `nc_tower` | **1.12.1** | https://github.com/vdroners/nc-tower | OCP rewrite; configurable endpoints; NC Tower branding |
 
 All five `appinfo/info.xml` files validate against https://apps.nextcloud.com/schema/apps/info.xsd.
@@ -26,11 +26,28 @@ All five `appinfo/info.xml` files validate against https://apps.nextcloud.com/sc
 
 On `nextcloud:34-apache` (PHP 8.5):
 
-- Enabled: `nc_print` 1.60.13, `nc_wireguard` 2.3.2, `nc_roomba` 0.12.1, `nc_litter` 0.4.1, `nc_tower` 1.12.1
+- Enabled: `nc_print` 1.60.13, `nc_wireguard` 2.3.2, `nc_roomba` 0.12.1, `nc_litter` 0.4.2, `nc_tower` 1.12.1
 - `occ app:remove` exercised for roomba/litter (uninstall listeners ran)
 - Blocker fixed mid-pass: PHP `max-version="8.4"` prevented enable → dropped (min-only)
 
 Tarball dry-runs under `/tmp/nc_<id>-<ver>.tar.gz` exclude `node_modules`, `.git`, `src`, bridges/engines as designed.
+
+## Blocked on you (cannot be automated)
+
+Signing and App Store upload still need a public certificate. Local state as of
+2026-09-20:
+
+| Item | State |
+|------|--------|
+| `~/.nextcloud/certificates/nc_litter.key` | present (mode 600) |
+| `~/.nextcloud/certificates/nc_litter.csr` | present |
+| `~/.nextcloud/certificates/nc_litter.crt` | **missing** — Nextcloud has not returned the signed cert |
+| CSR directory in `nextcloud/app-certificate-requests` | **not merged** (404) |
+| GitHub `release` secrets (`APP_PRIVATE_KEY`, `APP_PUBLIC_CRT`, `APPSTORE_TOKEN`) | not set until the `.crt` exists |
+
+Until the `.crt` is next to the `.key`, `make appstore-sign` and a GitHub
+release will not push to the store. Unsigned tarball: `make appstore` →
+`/tmp/nc_litter-<version>.tar.gz`.
 
 ## Your steps (cannot be automated)
 

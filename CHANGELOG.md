@@ -10,6 +10,15 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.4.2] - 2026-09-20
+
+### Changed
+
+- Bridge `/health` version tracks the app version. The Python default, compose
+  `BRIDGE_VERSION`, and Dockerfile `ARG` stay in sync via `make bump-patch`.
+- Preflight G0e now fails if either default drifts from `info.xml` (a missing
+  literal is no longer a silent pass).
+
 ## [0.4.1] - 2026-09-20
 
 ### Fixed

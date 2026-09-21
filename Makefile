@@ -35,6 +35,9 @@ _bump:
 	fi; \
 	sed -i "s#\*\*Version $$cur\*\*#**Version $$next**#" "$(ROOT)README.md"; \
 	sed -i "s#version-$$cur-#version-$$next-#" "$(ROOT)README.md"; \
+	sed -i "s#BRIDGE_VERSION\", \"$$cur\"#BRIDGE_VERSION\", \"$$next\"#" "$(ROOT)bridge/app.py"; \
+	sed -i "s#BRIDGE_VERSION:-$$cur#BRIDGE_VERSION:-$$next#" "$(ROOT)docker-compose.bridge.yml"; \
+	sed -i "s#ARG BRIDGE_VERSION=$$cur#ARG BRIDGE_VERSION=$$next#" "$(ROOT)bridge/Dockerfile"; \
 	if ! grep -q "^## \[$$next\]" "$(ROOT)CHANGELOG.md"; then \
 		awk -v v="$$next" -v d="$(DATE)" 'BEGIN{done=0} /^## \[/ && !done {print "## [" v "] - " d "\n"; done=1} {print}' \
 			"$(ROOT)CHANGELOG.md" > "$(ROOT)CHANGELOG.md.tmp" && mv "$(ROOT)CHANGELOG.md.tmp" "$(ROOT)CHANGELOG.md"; \
