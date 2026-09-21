@@ -105,14 +105,13 @@ bridge-test-host:
 	cd "$(ROOT)bridge" && python3 -m pytest test -q
 
 run-phpunit:
-	@if [ -f "$(ROOT)vendor/bin/phpunit" ] && command -v php >/dev/null 2>&1; then \
-		cd "$(ROOT)" && vendor/bin/phpunit; \
-	elif [ -f "$(ROOT)vendor/bin/phpunit" ]; then \
-		docker run --rm -v "$(ROOT):/app" -w /app php:8.2-cli php vendor/bin/phpunit; \
-	else \
+	@if [ ! -f "$(ROOT)vendor/bin/phpunit" ]; then \
 		docker run --rm -v "$(ROOT):/app" -w /app composer:2 composer install --no-interaction; \
-		docker run --rm -v "$(ROOT):/app" -w /app php:8.2-cli php vendor/bin/phpunit; \
 	fi
+	@# Always run in php:8.2-cli. On this lab host `~/bin/php` is a cloud_app
+	@# stub that cannot see the nc-litter tree, so a host-first path falsely
+	@# "found" PHP and then failed with "Could not open input file".
+	docker run --rm -v "$(ROOT):/app" -w /app php:8.2-cli php vendor/bin/phpunit
 
 phpunit: run-phpunit
 

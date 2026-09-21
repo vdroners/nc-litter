@@ -10,6 +10,21 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.4.1] - 2026-09-20
+
+### Fixed
+
+- `make run-phpunit` / `gate-preflight` on the lab host: always run PHPUnit in
+  `php:8.2-cli`. Host `~/bin/php` is a `cloud_app` stub that cannot see this
+  tree, so the gate previously picked host PHP and died with
+  "Could not open input file: vendor/bin/phpunit".
+
+### Changed
+
+- Bridge compose: urllib healthcheck, plain-compose `mem_limit` / `pids_limit`
+  (512 MiB / 128) in addition to Swarm `deploy.resources`.
+- `docs/APPSTORE_HANDOFF.md`: litter version row updated to 0.4.0+.
+
 ## [0.4.0] - 2026-08-09
 
 Sensor health. The unit's laser (time-of-flight) board failed on 2026-08-07; this

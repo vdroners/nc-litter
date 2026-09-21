@@ -9,7 +9,7 @@ Status after the five-app readiness pass (2026-08-03). Agent work is pushed to G
 | `nc_print` | **1.60.13** | https://github.com/vdroners/nc-print | CSRF hardened; slicer GHCR workflow stub; PHP max dropped for NC34 |
 | `nc_wireguard` | **2.3.2** | https://github.com/vdroners/nc-wireguard | External wg-easy; CSRF on settings save |
 | `nc_roomba` | **0.12.1** | https://github.com/vdroners/nc-roomba | Uninstall cleanup; bridge GHCR workflow |
-| `nc_litter` | **0.3.1** | https://github.com/vdroners/nc-litter | Whisker privacy note; bridge GHCR workflow |
+| `nc_litter` | **0.4.1** | https://github.com/vdroners/nc-litter | Sensor-health detectors + Whisker privacy note; bridge GHCR workflow |
 | `nc_tower` | **1.12.1** | https://github.com/vdroners/nc-tower | OCP rewrite; configurable endpoints; NC Tower branding |
 
 All five `appinfo/info.xml` files validate against https://apps.nextcloud.com/schema/apps/info.xsd.
@@ -26,7 +26,7 @@ All five `appinfo/info.xml` files validate against https://apps.nextcloud.com/sc
 
 On `nextcloud:34-apache` (PHP 8.5):
 
-- Enabled: `nc_print` 1.60.13, `nc_wireguard` 2.3.2, `nc_roomba` 0.12.1, `nc_litter` 0.3.1, `nc_tower` 1.12.1
+- Enabled: `nc_print` 1.60.13, `nc_wireguard` 2.3.2, `nc_roomba` 0.12.1, `nc_litter` 0.4.1, `nc_tower` 1.12.1
 - `occ app:remove` exercised for roomba/litter (uninstall listeners ran)
 - Blocker fixed mid-pass: PHP `max-version="8.4"` prevented enable → dropped (min-only)
 
