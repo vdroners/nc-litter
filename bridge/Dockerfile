@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py litter_manager.py normalizer.py ./
 
 # Default when compose does not pass BRIDGE_VERSION. make bump-patch rewrites it.
-ARG BRIDGE_VERSION=0.4.2
+ARG BRIDGE_VERSION=0.4.3
 ENV PORT=8080
 ENV BRIDGE_VERSION=${BRIDGE_VERSION}
 EXPOSE 8080

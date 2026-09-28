@@ -104,6 +104,35 @@ final class SensorHealthServiceTest extends TestCase
 			'a pinned distance sensor can still produce a plausible-looking percentage');
 	}
 
+	public function test_a_pinned_distance_register_with_a_moving_drawer_is_stale_not_frozen(): void
+	{
+		// The repaired unit: DFILevelMM held 77 for 38 days while the drawer
+		// percentage filled and emptied normally. That is a register the cloud
+		// does not refresh, not a dead sensor, and it must not mute drawer alerts.
+		$now = 1_800_000_000;
+		$rows = $this->series(96, $now, static fn (): array => ['dfi_level_mm' => 77], 100, 104);
+		foreach ($rows as $i => &$row) {
+			$row['drawer'] = 20 + intdiv($i, 8);
+		}
+		unset($row);
+		$result = $this->service()->assess($rows, ['status' => 'ready'], $now);
+		$this->assertSame('stale', $result['metrics']['drawer_distance_state']);
+		$this->assertTrue($result['trust']['drawer']);
+		$this->assertSame([], $result['evidence']);
+	}
+
+	public function test_a_pinned_weight_register_with_a_varying_cat_weight_is_stale(): void
+	{
+		$now = 1_800_000_000;
+		$rows = $this->series(96, $now, static fn (): array => ['weight_sensor' => -1.5], 100, 104);
+		foreach ($rows as $i => &$row) {
+			$row['weight'] = $i < 48 ? 10.42 : 13.16;
+		}
+		unset($row);
+		$this->assertSame('stale',
+			$this->service()->assess($rows, ['status' => 'ready'], $now)['metrics']['weight_sensor_state']);
+	}
+
 	// ── Stuck self-test ─────────────────────────────────────────────────────
 
 	public function test_a_self_test_code_held_for_an_hour_is_a_stuck_boot(): void

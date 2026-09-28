@@ -10,6 +10,20 @@ bridge → DB pattern, same live-refresh pipeline, same design tokens) with the
 device layer replaced. Its history starts here; the vacuum app's changelog was
 inherited by the clone and is not this app's history, so it has been removed.
 
+## [0.4.3] - 2026-09-28
+
+### Fixed
+
+- **False "sensor has stopped changing" warnings, and muted drawer-full
+  alerts.** The cloud never refreshes `weightSensor` / `DFILevelMM` on this
+  unit — they read `-1.5` / `77` unchanged for 38 days while the drawer
+  filled and emptied and the cat weight varied 7.5–13.5 lb. The frozen-register
+  detector called both frozen, raised two permanent "needs service" warnings,
+  and marked the drawer untrusted, which suppressed every drawer-full
+  notification since 08-06. A pinned register whose live companion reading
+  (drawer % / cat weight) moved is now `stale` (no hint, trust kept); only a
+  register pinned alongside its companion is `frozen`.
+
 ## [0.4.2] - 2026-09-20
 
 ### Changed

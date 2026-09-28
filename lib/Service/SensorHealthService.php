@@ -135,7 +135,7 @@ class SensorHealthService
 	 * through it and assert exactly which day each detector first fires. That
 	 * replay is the only reason to trust any number in this class.
 	 *
-	 * @param list<array{ts:int,status:string,drawer:?int,litter:?int,cycles:?int,diag:array<string,mixed>}> $rows oldest first
+	 * @param list<array{ts:int,status:string,drawer:?int,litter:?int,cycles:?int,weight?:?float,diag:array<string,mixed>}> $rows oldest first
 	 * @param array<string, mixed> $state
 	 * @return array{metrics: array<string, string|null>, trust: array<string, bool>, evidence: list<string>}
 	 */
@@ -145,8 +145,8 @@ class SensorHealthService
 		$diag = is_array($state['diagnostics'] ?? null) ? $state['diagnostics'] : [];
 
 		$drawerBad = $this->drawerReversal($rows, $now, $evidence);
-		$weightFrozen = $this->frozenRegister($rows, 'weight_sensor', $now, $evidence);
-		$distanceFrozen = $this->frozenRegister($rows, 'dfi_level_mm', $now, $evidence);
+		$weightFrozen = $this->frozenRegister($rows, 'weight_sensor', 'weight', $now, $evidence);
+		$distanceFrozen = $this->frozenRegister($rows, 'dfi_level_mm', 'drawer', $now, $evidence);
 		$cycleState = $this->cycleActivity($rows, $state, $now, $evidence);
 		$selfTest = $this->selfTestState($rows, $diag, $now, $evidence);
 
@@ -262,16 +262,28 @@ class SensorHealthService
 	 * Real load cells jitter — the faulted unit held `weightSensor` at exactly
 	 * -1.5 across an 11-minute observation, which is not what a live sensor does.
 	 *
-	 * @param list<array{ts:int,cycles:?int,diag:array<string,mixed>}> $rows
+	 * But the cloud does not refresh every register. The repaired unit reported
+	 * `weightSensor: -1.5` and `DFILevelMM: 77` unchanged for 38 days (08-21 →
+	 * 09-28) while its drawer percentage filled and emptied and the cat weight
+	 * varied 7.5–13.5 lb. A register whose live companion reading (`$companion`)
+	 * moved during the run is therefore `stale` — not refreshed, no verdict — and
+	 * only a pinned register whose companion is also pinned is `frozen`.
+	 *
+	 * @param list<array{ts:int,cycles:?int,drawer:?int,weight:?float,diag:array<string,mixed>}> $rows
 	 * @param list<string> $evidence
 	 */
-	private function frozenRegister(array $rows, string $key, int $now, array &$evidence): ?string
+	private function frozenRegister(array $rows, string $key, string $companion, int $now, array &$evidence): ?string
 	{
 		$seen = [];
 		foreach ($rows as $row) {
 			$value = $row['diag'][$key] ?? null;
 			if ($value !== null) {
-				$seen[] = ['ts' => $row['ts'], 'v' => (string) $value, 'cycles' => $row['cycles']];
+				$seen[] = [
+					'ts' => $row['ts'],
+					'v' => (string) $value,
+					'cycles' => $row['cycles'],
+					'companion' => $row[$companion] ?? null,
+				];
 			}
 		}
 		if (count($seen) < self::FROZEN_MIN_SAMPLES) {
@@ -296,6 +308,13 @@ class SensorHealthService
 			// Steady but idle. Nothing to conclude, and saying "frozen" here would be
 			// the false alarm this whole class exists to prevent.
 			return 'ok';
+		}
+		$companionValues = array_unique(array_filter(
+			array_map(static fn (array $s): ?string => $s['companion'] === null ? null : (string) $s['companion'], $run),
+			static fn (?string $v): bool => $v !== null,
+		));
+		if (count($companionValues) > 1) {
+			return 'stale';
 		}
 		$evidence[] = sprintf(
 			'%s held %s across %d readings over %d hours, through %d cycle(s)',
@@ -426,6 +445,7 @@ class SensorHealthService
 				'drawer' => $sample->getDrawerLevelPct() === null ? null : (int) $sample->getDrawerLevelPct(),
 				'litter' => $sample->getLitterLevelPct() === null ? null : (int) $sample->getLitterLevelPct(),
 				'cycles' => $sample->getCycleCount() === null ? null : (int) $sample->getCycleCount(),
+				'weight' => $sample->getCatWeight() === null ? null : (float) $sample->getCatWeight(),
 				'diag' => $diag,
 			];
 		}
